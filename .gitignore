@@ -1,0 +1,107 @@
+# ---- macOS ----
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+*.icloud
+
+# ---- C / C++ build artifacts ----
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dSYM/
+*.out
+*.exe
+*.d
+*.gch
+*.pch
+*.slo
+*.lo
+*.la
+*.lai
+
+# ---- Build directories ----
+build/
+Build/
+out/
+bin/
+obj/
+cmake-build-*/
+
+# ---- CMake ----
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+compile_commands.json
+install_manifest.txt
+_deps/
+
+# ---- Make / Ninja ----
+.ninja_deps
+.ninja_log
+*.make
+
+# ---- Xcode ----
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+DerivedData/
+*.xcworkspace/xcuserdata/
+*.moved-aside
+*.hmap
+*.ipa
+
+# ---- Debug / profiling ----
+*.log
+*.trace
+*.gcda
+*.gcno
+*.gcov
+core
+core.*
+*.profraw
+*.profdata
+
+# ---- Editors / IDEs ----
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+.clangd/
+.cache/
+
+# ---- Package managers ----
+vcpkg_installed/
+conan/
+node_modules/
+
+# ---- Environment / secrets ----
+.env
+.env.*
+*.pem
+*.key
+
+# ---- Other ----
+*.csv
