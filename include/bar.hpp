@@ -6,11 +6,11 @@
 
 struct Bar
 {
-    std::int64_t timestamp;
-    double open;
-    double high;
-    double low;
-    double close;
+    std::int64_t timestamp{};
+    double open{};
+    double high{};
+    double low{};
+    double close{};
 };
 
 struct BarSeries
