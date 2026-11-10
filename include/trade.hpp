@@ -32,7 +32,7 @@ inline double sign(Direction d)
     return d == Direction::Long ? 1.0 : -1.0;
 }
 
-inline double pnl0f(const Trade& t, double exitPrice)
+inline double pnlOf(const Trade& t, double exitPrice)
 {
     return (exitPrice - t.entryPrice) * t.quantity * sign(t.direction);
 }
