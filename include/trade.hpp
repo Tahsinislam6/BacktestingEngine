@@ -14,6 +14,26 @@ struct Trade
     std::int64_t entryTime{};
     std::optional<double> stopLoss;
     std::optional<double> takeProfit;
-
-
 };
+
+enum class ExitReason {Signal, StopLoss, TakeProfit};
+
+struct ClosedTrade
+{
+    Trade trade;
+    double exitPrice{};
+    std::int64_t exitTime{};
+    ExitReason reason{ExitReason::Signal};
+    double pnl{};
+};
+
+inline double sign(Direction d)
+{
+    return d == Direction::Long ? 1.0 : -1.0;
+}
+
+inline double pnl0f(const Trade& t, double exitPrice)
+{
+    return (exitPrice - t.entryPrice) * t.quantity * sign(t.direction);
+}
+
