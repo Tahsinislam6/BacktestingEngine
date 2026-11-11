@@ -19,6 +19,9 @@ class Portfolio
 
         double equity(double markPrice) const;
 
+        const std::vector<Trade>& openTrades() const {return open_;}
+        const std::vector<ClosedTrade>& closedTrades() const {return closed_;}
+
     private:
         double cash_{};
         int nextId_{1};
