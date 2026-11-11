@@ -176,3 +176,36 @@ TEST(PortfolioTest, OpenAcceptsStopLossAndTakeProfit)
 
     EXPECT_TRUE(p.close(id, 100, 2, ExitReason::Signal));
 }
+
+TEST(PortfolioTest, OpenTradesListsOpenedTrades)
+{
+    Portfolio p(10000.0);
+    int id = p.open(Direction::Short, 2, 100, 5, 105.0, 90.0);
+
+    ASSERT_EQ(p.openTrades().size(), 1u);
+    const Trade& t = p.openTrades()[0];
+    EXPECT_EQ(t.id, id);
+    EXPECT_EQ(t.direction, Direction::Short);
+    EXPECT_DOUBLE_EQ(t.quantity, 2.0);
+    EXPECT_DOUBLE_EQ(t.entryPrice, 100.0);
+    EXPECT_EQ(t.entryTime, 5);
+    EXPECT_DOUBLE_EQ(*t.stopLoss, 105.0);
+    EXPECT_DOUBLE_EQ(*t.takeProfit, 90.0);
+}
+
+TEST(PortfolioTest, CloseMovesTradeToClosedList)
+{
+    Portfolio p(10000.0);
+    int id = p.open(Direction::Long, 2, 100, 1);
+
+    p.close(id, 110, 9, ExitReason::TakeProfit);
+
+    EXPECT_TRUE(p.openTrades().empty());
+    ASSERT_EQ(p.closedTrades().size(), 1u);
+    const ClosedTrade& c = p.closedTrades()[0];
+    EXPECT_EQ(c.trade.id, id);
+    EXPECT_DOUBLE_EQ(c.exitPrice, 110.0);
+    EXPECT_EQ(c.exitTime, 9);
+    EXPECT_EQ(c.reason, ExitReason::TakeProfit);
+    EXPECT_DOUBLE_EQ(c.pnl, 20.0);
+}
