@@ -209,3 +209,75 @@ TEST(PortfolioTest, CloseMovesTradeToClosedList)
     EXPECT_EQ(c.reason, ExitReason::TakeProfit);
     EXPECT_DOUBLE_EQ(c.pnl, 20.0);
 }
+
+// ---------- asset ----------
+
+TEST(PortfolioTest, OpenWithoutAssetStoresZero)
+{
+    Portfolio p(10000.0);
+
+    p.open(Direction::Long, 1, 100, 1);
+
+    ASSERT_EQ(p.openTrades().size(), 1u);
+    EXPECT_EQ(p.openTrades()[0].asset, 0);
+}
+
+TEST(PortfolioTest, OpenStoresTheAsset)
+{
+    Portfolio p(10000.0);
+
+    p.open(Direction::Long, 1, 100, 1, std::nullopt, std::nullopt, 2);
+
+    ASSERT_EQ(p.openTrades().size(), 1u);
+    EXPECT_EQ(p.openTrades()[0].asset, 2);
+}
+
+TEST(PortfolioTest, OldStyleCallWithStopAndTargetStillWorks)
+{
+    Portfolio p(10000.0);
+
+    p.open(Direction::Long, 1, 100, 1, 95.0, 110.0);
+
+    const Trade& t = p.openTrades()[0];
+    EXPECT_EQ(t.asset, 0);
+    ASSERT_TRUE(t.stopLoss.has_value());
+    EXPECT_DOUBLE_EQ(*t.stopLoss, 95.0);
+    ASSERT_TRUE(t.takeProfit.has_value());
+    EXPECT_DOUBLE_EQ(*t.takeProfit, 110.0);
+}
+
+TEST(PortfolioTest, TradesOnDifferentAssetsGetDifferentIdsAndKeepTheirAsset)
+{
+    Portfolio p(10000.0);
+
+    int a = p.open(Direction::Long, 1, 100, 1, std::nullopt, std::nullopt, 0);
+    int b = p.open(Direction::Short, 1, 50, 1, std::nullopt, std::nullopt, 5);
+
+    EXPECT_NE(a, b);
+    ASSERT_EQ(p.openTrades().size(), 2u);
+    EXPECT_EQ(p.openTrades()[0].asset, 0);
+    EXPECT_EQ(p.openTrades()[1].asset, 5);
+}
+
+TEST(PortfolioTest, AssetSurvivesIntoTheClosedTrade)
+{
+    Portfolio p(10000.0);
+    int id = p.open(Direction::Long, 1, 100, 1, std::nullopt, std::nullopt, 3);
+
+    p.close(id, 110, 2, ExitReason::Signal);
+
+    ASSERT_EQ(p.closedTrades().size(), 1u);
+    EXPECT_EQ(p.closedTrades()[0].trade.asset, 3);
+}
+
+TEST(PortfolioTest, ClosingOneAssetLeavesTheOtherOpen)
+{
+    Portfolio p(10000.0);
+    int a = p.open(Direction::Long, 1, 100, 1, std::nullopt, std::nullopt, 0);
+    p.open(Direction::Long, 1, 50, 1, std::nullopt, std::nullopt, 1);
+
+    p.close(a, 105, 2, ExitReason::Signal);
+
+    ASSERT_EQ(p.openTrades().size(), 1u);
+    EXPECT_EQ(p.openTrades()[0].asset, 1);
+}

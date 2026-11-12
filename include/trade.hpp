@@ -8,6 +8,7 @@ enum class Direction {Long, Short};
 struct Trade
 {
     int id{};
+    int asset{};
     Direction direction{Direction::Long};
     double quantity{};
     double entryPrice{};

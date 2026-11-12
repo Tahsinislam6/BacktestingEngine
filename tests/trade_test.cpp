@@ -94,3 +94,23 @@ TEST(TradeTest, PnlIsZeroWhenExitEqualsEntry)
 
     EXPECT_DOUBLE_EQ(pnlOf(t, 100), 0.0);
 }
+
+// ---------- asset ----------
+
+TEST(TradeTest, AssetDefaultsToZero)
+{
+    Trade t;
+
+    EXPECT_EQ(t.asset, 0);
+}
+
+TEST(TradeTest, PnlDoesNotDependOnTheAsset)
+{
+    Trade a;
+    a.entryPrice = 100;
+    a.quantity = 2;
+    Trade b = a;
+    b.asset = 7;
+
+    EXPECT_DOUBLE_EQ(pnlOf(a, 110), pnlOf(b, 110));
+}

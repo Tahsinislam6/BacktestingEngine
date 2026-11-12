@@ -13,7 +13,8 @@ class Portfolio
 
         int open(Direction d, double qty, double price, std::int64_t time,
                 std::optional<double> sl = std::nullopt,
-                std::optional<double> tp = std::nullopt);
+                std::optional<double> tp = std::nullopt,
+                int asset = 0);
         
         bool close(int id, double price, std::int64_t time, ExitReason why);
 

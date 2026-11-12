@@ -5,10 +5,11 @@
 Portfolio::Portfolio(double startingCash) : cash_(startingCash) {}
 
 int Portfolio::open(Direction d, double qty, double price, std::int64_t time,
-        std::optional<double> sl, std::optional<double> tp)
+        std::optional<double> sl, std::optional<double> tp, int asset)
 {
     Trade t;
     t.id = nextId_++;
+    t.asset = asset;
     t.direction = d;
     t.quantity = qty;
     t.entryPrice = price;
