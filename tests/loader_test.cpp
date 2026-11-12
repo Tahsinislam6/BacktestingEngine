@@ -154,3 +154,91 @@ TEST_F(LoaderTest, ThrowsWhenValueIsNotANumber)
     // std::stod throws std::invalid_argument, which is a std::logic_error
     EXPECT_THROW(loadCsv(path), std::invalid_argument);
 }
+
+// ---------- timestamps in date/datetime form ----------
+
+TEST_F(LoaderTest, ReadsQuotedDatetimeTimestamps)
+{
+    std::string path = writeCsv(
+        "\"time\",\"open\",\"high\",\"low\",\"close\",\"volume\",\"trades\",\"date\"\n"
+        "\"2025-01-01 22:04:00\",0.82759,0.83254,0.82668,0.82928,0,72455,\"2025-01-02\"\n"
+        "\"2025-01-02 22:04:00\",0.82928,0.83034,0.8285,0.82988,0,55090,\"2025-01-03\"\n");
+
+    BarSeries series = loadCsv(path);
+
+    ASSERT_EQ(series.bars.size(), 2u);
+    EXPECT_EQ(series.bars[0].timestamp, 1735769040);
+    EXPECT_EQ(series.bars[1].timestamp, 1735769040 + 86400);
+    EXPECT_DOUBLE_EQ(series.bars[0].open, 0.82759);
+    EXPECT_DOUBLE_EQ(series.bars[0].close, 0.82928);
+}
+
+TEST_F(LoaderTest, ReadsDateOnlyTimestamps)
+{
+    std::string path = writeCsv(
+        "date,open,high,low,close\n"
+        "2025-01-02,1,2,0.5,1.5\n");
+
+    BarSeries series = loadCsv(path);
+
+    ASSERT_EQ(series.bars.size(), 1u);
+    EXPECT_EQ(series.bars[0].timestamp, 1735776000);
+}
+
+TEST_F(LoaderTest, MixedEpochAndDateRowsAreSorted)
+{
+    std::string path = writeCsv(
+        "timestamp,open,high,low,close\n"
+        "2025-01-03,3,3,3,3\n"
+        "1735776000,1,1,1,1\n"       // 2025-01-02
+        "2025-01-04,4,4,4,4\n");
+
+    BarSeries series = loadCsv(path);
+
+    ASSERT_EQ(series.bars.size(), 3u);
+    EXPECT_DOUBLE_EQ(series.bars[0].close, 1.0);
+    EXPECT_DOUBLE_EQ(series.bars[1].close, 3.0);
+    EXPECT_DOUBLE_EQ(series.bars[2].close, 4.0);
+}
+
+TEST_F(LoaderTest, ThrowsOnImpossibleDate)
+{
+    std::string path = writeCsv(
+        "timestamp,open,high,low,close\n"
+        "2025-02-30,1,1,1,1\n");
+
+    EXPECT_THROW(loadCsv(path), std::invalid_argument);
+}
+
+TEST_F(LoaderTest, ThrowsOnGarbageTimestamp)
+{
+    std::string path = writeCsv(
+        "timestamp,open,high,low,close\n"
+        "yesterday,1,1,1,1\n");
+
+    EXPECT_THROW(loadCsv(path), std::invalid_argument);
+}
+
+// ---------- symbol ----------
+
+TEST_F(LoaderTest, SymbolIsStoredInTheSeries)
+{
+    std::string path = writeCsv(
+        "timestamp,open,high,low,close\n"
+        "100,1,1,1,1\n");
+
+    BarSeries series = loadCsv(path, "EURGBP");
+
+    EXPECT_EQ(series.symbol, "EURGBP");
+}
+
+TEST_F(LoaderTest, SymbolDefaultsToEmpty)
+{
+    std::string path = writeCsv(
+        "timestamp,open,high,low,close\n"
+        "100,1,1,1,1\n");
+
+    BarSeries series = loadCsv(path);
+
+    EXPECT_TRUE(series.symbol.empty());
+}

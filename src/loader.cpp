@@ -5,12 +5,15 @@
 #include <sstream>
 #include <stdexcept>
 
-BarSeries loadCsv(const std::string& path)
+#include "timestamp.hpp"
+
+BarSeries loadCsv(const std::string& path, const std::string& symbol)
 {
     std::ifstream file(path);
     if (!file) throw std::runtime_error("Cannot open " + path);
 
     BarSeries series;
+    series.symbol = symbol;
 
     std::string line;
     std::getline(file, line);   // skip header
@@ -31,7 +34,7 @@ BarSeries loadCsv(const std::string& path)
             throw std::runtime_error("Bad row in " + path + ": " + line);
 
         Bar bar;
-        bar.timestamp = std::stoll(fields[0]);
+        bar.timestamp = parseTimestamp(fields[0]);
         bar.open = std::stod(fields[1]);
         bar.high = std::stod(fields[2]);
         bar.low = std::stod(fields[3]);
