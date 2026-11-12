@@ -19,4 +19,4 @@ struct AlignedData
     std::vector<Snapshot> snapshots;
 };
 
-AlignedData alignByDay(const std::vector<BarSeries>& series)
+AlignedData align(const std::vector<BarSeries>& series);

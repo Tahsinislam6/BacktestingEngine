@@ -12,7 +12,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Your code lives in a library so both the app and the tests can use it
-add_library(engine src/engine.cpp src/loader.cpp src/portfolio.cpp src/backtester.cpp src/timestamp.cpp)
+add_library(engine src/engine.cpp src/loader.cpp src/portfolio.cpp src/backtester.cpp src/timestamp.cpp src/aligned.cpp)
 target_include_directories(engine PUBLIC include)
 
 # The program you run
@@ -28,7 +28,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 
 enable_testing()
-add_executable(engine_tests tests/engine_test.cpp tests/loader_test.cpp tests/trade_test.cpp tests/portfolio_test.cpp tests/order_test.cpp tests/strategy_test.cpp tests/backtester_test.cpp tests/timestamp_test.cpp)
+add_executable(engine_tests tests/engine_test.cpp tests/loader_test.cpp tests/trade_test.cpp tests/portfolio_test.cpp tests/order_test.cpp tests/strategy_test.cpp tests/backtester_test.cpp tests/timestamp_test.cpp tests/aligned_test.cpp)
 target_link_libraries(engine_tests PRIVATE engine GTest::gtest_main)
 
 include(GoogleTest)
