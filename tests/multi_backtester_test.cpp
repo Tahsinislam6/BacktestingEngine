@@ -95,6 +95,7 @@ public:
         seenPresent.push_back(present);
 
         openCounts.push_back(portfolio.openTrades().size());
+        equities.push_back(portfolio.equity());
 
         const std::size_t i = calls++;
         if (i < script_.size())
@@ -106,6 +107,7 @@ public:
     std::vector<std::int64_t> seenTimestamps;
     std::vector<std::vector<bool>> seenPresent;
     std::vector<std::size_t> openCounts;
+    std::vector<double> equities;      // portfolio.equity() as the strategy saw it on each call
 
 private:
     std::vector<std::vector<Order>> script_;
@@ -158,6 +160,48 @@ TEST(PortfolioMarksTest, OneMarkMatchesTheSinglePriceOverload)
     const std::vector<double> marks = {107.0};
 
     EXPECT_DOUBLE_EQ(p.equity(marks), p.equity(107.0));
+}
+
+// ---------- Portfolio::setMarks and equity() ----------
+
+TEST(PortfolioMarksTest, EquityWithNoMarksSetIsCashEvenWithOpenTrades)
+{
+    Portfolio p(kCash);
+    p.open(Direction::Long, 1, 100, 1, std::nullopt, std::nullopt, 0);
+
+    EXPECT_DOUBLE_EQ(p.equity(), kCash);
+}
+
+TEST(PortfolioMarksTest, EquityUsesTheMarksThatWereSet)
+{
+    Portfolio p(kCash);
+    p.open(Direction::Long, 1, 100, 1, std::nullopt, std::nullopt, 0);
+    p.open(Direction::Short, 2, 50, 1, std::nullopt, std::nullopt, 1);
+
+    p.setMarks({110.0, 45.0});
+
+    EXPECT_DOUBLE_EQ(p.equity(), kCash + 10 + 10);
+}
+
+TEST(PortfolioMarksTest, SetMarksReplacesThePreviousMarks)
+{
+    Portfolio p(kCash);
+    p.open(Direction::Long, 1, 100, 1, std::nullopt, std::nullopt, 0);
+
+    p.setMarks({110.0});
+    p.setMarks({90.0});
+
+    EXPECT_DOUBLE_EQ(p.equity(), kCash - 10);
+}
+
+TEST(PortfolioMarksTest, EquityIncludesRealisedPnl)
+{
+    Portfolio p(kCash);
+    int id = p.open(Direction::Long, 1, 100, 1, std::nullopt, std::nullopt, 0);
+    p.close(id, 130, 2, ExitReason::Signal);
+    p.setMarks({500.0});
+
+    EXPECT_DOUBLE_EQ(p.equity(), kCash + 30);
 }
 
 // ---------- shape of the run ----------
@@ -396,6 +440,57 @@ TEST(MultiBacktestTest, AnAssetWithoutABarKeepsItsLastKnownMark)
 
     ASSERT_EQ(r.equityCurve.size(), 3u);
     EXPECT_DOUBLE_EQ(r.equityCurve[2], kCash + 20 + 10);
+}
+
+TEST(MultiBacktestTest, StrategySeesEquityIncludingOpenPnl)
+{
+    ScriptedMulti strategy({{openOrder(Direction::Long, 1, std::nullopt, std::nullopt, 0)}});
+    AlignedData data = makeData(1, {
+        snap(1, {flatBar(1, 100)}),
+        snap(2, {flatBar(2, 110)}),
+        snap(3, {flatBar(3, 95)}),
+    });
+
+    runMultiBacktest(data, strategy, kCash);
+
+    ASSERT_EQ(strategy.equities.size(), 3u);
+    EXPECT_DOUBLE_EQ(strategy.equities[0], kCash);        // nothing open yet when it ran
+    EXPECT_DOUBLE_EQ(strategy.equities[1], kCash + 10);   // marked at today's close
+    EXPECT_DOUBLE_EQ(strategy.equities[2], kCash - 5);
+}
+
+TEST(MultiBacktestTest, StrategyEquityUsesTheLastKnownMarkWhenAnAssetHasNoBar)
+{
+    ScriptedMulti strategy({{
+        openOrder(Direction::Long, 1, std::nullopt, std::nullopt, 0),
+        openOrder(Direction::Long, 1, std::nullopt, std::nullopt, 1),
+    }});
+    AlignedData data = makeData(2, {
+        snap(1, {flatBar(1, 100), flatBar(1, 50)}),
+        snap(2, {flatBar(2, 110), flatBar(2, 60)}),
+        snap(3, {flatBar(3, 120), std::nullopt}),
+    });
+
+    runMultiBacktest(data, strategy, kCash);
+
+    ASSERT_EQ(strategy.equities.size(), 3u);
+    EXPECT_DOUBLE_EQ(strategy.equities[1], kCash + 10 + 10);
+    EXPECT_DOUBLE_EQ(strategy.equities[2], kCash + 20 + 10);   // asset 1 still marked at 60
+}
+
+TEST(MultiBacktestTest, StrategyEquityAlreadyReflectsAStopThatJustHit)
+{
+    ScriptedMulti strategy({{openOrder(Direction::Long, 1, 95.0, std::nullopt, 0)}});
+    AlignedData data = makeData(1, {
+        snap(1, {flatBar(1, 100)}),
+        snap(2, {makeBar(2, 100, 101, 90, 92)}),     // stop 95 hit, filled at 95
+    });
+
+    runMultiBacktest(data, strategy, kCash);
+
+    ASSERT_EQ(strategy.equities.size(), 2u);
+    EXPECT_DOUBLE_EQ(strategy.equities[1], kCash - 5);   // realised loss, trade already gone
+    EXPECT_EQ(strategy.openCounts[1], 0u);
 }
 
 TEST(MultiBacktestTest, RealisedPnlGoesToCash)

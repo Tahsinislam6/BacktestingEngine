@@ -81,6 +81,9 @@ BacktestResult runMultiBacktest(const AlignedData& data, MultiStrategy& strategy
                 marks[a] = snapshot.bars[a]->close;
         }
 
+        // Give the portfolio the marks so strategies can call portfolio.equity().
+        portfolio.setMarks(marks);
+
         // 2. Stops and targets: each trade is checked against its own asset's bar.
         //    Copy the open trades first, because closing a trade changes the list.
         const std::vector<Trade> open = portfolio.openTrades();
@@ -95,7 +98,7 @@ BacktestResult runMultiBacktest(const AlignedData& data, MultiStrategy& strategy
             fill(portfolio, order, snapshot);
 
         // 4. Record equity using the marks.
-        result.equityCurve.push_back(portfolio.equity(marks));
+        result.equityCurve.push_back(portfolio.equity());
     }
 
     result.closedTrades = portfolio.closedTrades();
