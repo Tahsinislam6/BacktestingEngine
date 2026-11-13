@@ -5,10 +5,11 @@
 Portfolio::Portfolio(double startingCash) : cash_(startingCash) {}
 
 int Portfolio::open(Direction d, double qty, double price, std::int64_t time,
-        std::optional<double> sl, std::optional<double> tp)
+        std::optional<double> sl, std::optional<double> tp, int asset)
 {
     Trade t;
     t.id = nextId_++;
+    t.asset = asset;
     t.direction = d;
     t.quantity = qty;
     t.entryPrice = price;
@@ -46,5 +47,17 @@ double Portfolio::equity(double markPrice) const
     double total = cash_;
     for (const Trade t : open_)
         total += pnlOf(t, markPrice);
+    return total;
+}
+
+double Portfolio::equity(const std::vector<double>& marks) const
+{
+    double total = cash_;
+    for (const Trade& t : open_)
+    {
+        // Only value the trade if we have a mark for its asset.
+        if (t.asset >= 0 && static_cast<std::size_t>(t.asset) < marks.size())
+            total += pnlOf(t, marks[t.asset]);
+    }
     return total;
 }

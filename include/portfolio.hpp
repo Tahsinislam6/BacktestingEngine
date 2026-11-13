@@ -13,11 +13,16 @@ class Portfolio
 
         int open(Direction d, double qty, double price, std::int64_t time,
                 std::optional<double> sl = std::nullopt,
-                std::optional<double> tp = std::nullopt);
+                std::optional<double> tp = std::nullopt,
+                int asset = 0);
         
         bool close(int id, double price, std::int64_t time, ExitReason why);
 
         double equity(double markPrice) const;
+
+        // marks[asset] = price used to value open trades on that asset.
+        // A trade whose asset has no mark is valued at its entry price (adds no PnL).
+        double equity(const std::vector<double>& marks) const;
 
         const std::vector<Trade>& openTrades() const {return open_;}
         const std::vector<ClosedTrade>& closedTrades() const {return closed_;}
