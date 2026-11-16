@@ -12,8 +12,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Your code lives in a library so both the app and the tests can use it
-add_library(engine src/engine.cpp src/loader.cpp src/portfolio.cpp src/backtester.cpp src/timestamp.cpp src/aligned.cpp src/multi_backtester.cpp src/metrics.cpp src/zigzag.cpp src/capture.cpp)
+add_library(engine src/engine.cpp src/loader.cpp src/portfolio.cpp src/backtester.cpp src/timestamp.cpp src/aligned.cpp src/multi_backtester.cpp src/metrics.cpp src/zigzag.cpp src/capture.cpp src/param_space.cpp src/optimiser.cpp)
 target_include_directories(engine PUBLIC include)
+
+# runGrid uses std::thread
+find_package(Threads REQUIRED)
+target_link_libraries(engine PUBLIC Threads::Threads)
 
 # The program you run
 add_executable(backtester src/main.cpp)
@@ -28,7 +32,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 
 enable_testing()
-add_executable(engine_tests tests/engine_test.cpp tests/loader_test.cpp tests/trade_test.cpp tests/portfolio_test.cpp tests/order_test.cpp tests/strategy_test.cpp tests/backtester_test.cpp tests/timestamp_test.cpp tests/aligned_test.cpp tests/multi_backtester_test.cpp tests/indicators_core_test.cpp tests/atr_test.cpp tests/metrics_test.cpp tests/flip_strategy_test.cpp tests/zigzag_test.cpp tests/capture_test.cpp)
+add_executable(engine_tests tests/engine_test.cpp tests/loader_test.cpp tests/trade_test.cpp tests/portfolio_test.cpp tests/order_test.cpp tests/strategy_test.cpp tests/backtester_test.cpp tests/timestamp_test.cpp tests/aligned_test.cpp tests/multi_backtester_test.cpp tests/indicators_core_test.cpp tests/atr_test.cpp tests/metrics_test.cpp tests/flip_strategy_test.cpp tests/zigzag_test.cpp tests/capture_test.cpp tests/param_space_test.cpp tests/optimiser_test.cpp)
 target_link_libraries(engine_tests PRIVATE engine GTest::gtest_main)
 
 include(GoogleTest)
