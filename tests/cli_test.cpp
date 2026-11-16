@@ -69,6 +69,13 @@ TEST(CliTest, ReadsEveryOption)
     EXPECT_EQ(o.top, 5u);
 }
 
+TEST(CliTest, KeepSundaysIsAFlagWithoutAValue)
+{
+    EXPECT_FALSE(parse(base()).keepSundays);
+    EXPECT_TRUE(parse(with({"--keep-sundays"})).keepSundays);
+    EXPECT_TRUE(parse({"--keep-sundays", "--insample", "x", "--top", "3"}).keepSundays);
+}
+
 TEST(CliTest, OptionOrderDoesNotMatter)
 {
     const CliOptions o = parse({"--top", "3", "--insample", "x", "--min-trades", "1"});
@@ -194,6 +201,6 @@ TEST(CliTest, TheUsageTextMentionsEveryOption)
 
     for (const char* flag : {"--insample", "--outsample", "--baseline", "--objective", "--min-trades",
                              "--train-fraction", "--walk-train", "--walk-test", "--csv", "--threads",
-                             "--cash", "--top", "--help"})
+                             "--cash", "--top", "--keep-sundays", "--help"})
         EXPECT_NE(u.find(flag), std::string::npos) << flag;
 }

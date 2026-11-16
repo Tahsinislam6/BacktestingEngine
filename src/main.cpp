@@ -98,13 +98,13 @@ int main(int argc, char** argv)
         study.walkTrainBars = cli.walkTrain;
         study.walkTestBars = cli.walkTest;
 
-        const AlignedData inSample = loadFolder(cli.inSampleDir);
+        const AlignedData inSample = loadFolder(cli.inSampleDir, !cli.keepSundays);
         std::cout << "In-sample: " << inSample.symbols.size() << " assets, " << inSample.snapshots.size() << " days\n";
 
         AlignedData outOfSample;
         if (!cli.outSampleDir.empty())
         {
-            outOfSample = loadFolder(cli.outSampleDir);
+            outOfSample = loadFolder(cli.outSampleDir, !cli.keepSundays);
             std::cout << "Out-of-sample: " << outOfSample.symbols.size() << " assets, "
                       << outOfSample.snapshots.size() << " days\n";
         }

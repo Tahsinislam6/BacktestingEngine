@@ -53,6 +53,12 @@ CliOptions parseArgs(const std::vector<std::string>& args)
             continue;
         }
 
+        if (flag == "--keep-sundays")
+        {
+            o.keepSundays = true;
+            continue;
+        }
+
         // the word after the flag; it can't be another flag
         auto value = [&]() -> const std::string&
         {
@@ -113,5 +119,6 @@ std::string usage()
         "  --threads <n>            worker threads (default: all cores)\n"
         "  --cash <amount>          starting cash (default 100000)\n"
         "  --top <n>                rows to show in the ranked table (default 15)\n"
+        "  --keep-sundays           keep the small Sunday bars as they are (default: fold them into Monday)\n"
         "  --help                   show this text\n";
 }

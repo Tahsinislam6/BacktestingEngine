@@ -20,6 +20,7 @@ struct CliOptions
     std::size_t walkTest{0};
     double startingCash{100000.0};
     std::size_t top{15};
+    bool keepSundays{false};            // true = do not fold Sunday bars into Monday
     bool help{false};
 };
 

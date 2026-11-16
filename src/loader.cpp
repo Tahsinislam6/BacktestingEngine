@@ -5,7 +5,19 @@
 #include <sstream>
 #include <stdexcept>
 
-#include "timestamp.hpp"
+
+namespace
+{
+    // The whole text must be a whole number: "1451779200000" is fine, "2025-01-02" and "123abc" are not.
+    std::int64_t toInteger(const std::string& text)
+    {
+        std::size_t used = 0;
+        const long long value = std::stoll(text, &used);      // throws std::invalid_argument if not a number
+        if (used != text.size())
+            throw std::invalid_argument("Timestamp must be a whole number, got '" + text + "'");
+        return value;
+    }
+}
 
 BarSeries loadCsv(const std::string& path, const std::string& symbol)
 {
@@ -34,7 +46,7 @@ BarSeries loadCsv(const std::string& path, const std::string& symbol)
             throw std::runtime_error("Bad row in " + path + ": " + line);
 
         Bar bar;
-        bar.timestamp = parseTimestamp(fields[0]);
+        bar.timestamp = toInteger(fields[0]);
         bar.open = std::stod(fields[1]);
         bar.high = std::stod(fields[2]);
         bar.low = std::stod(fields[3]);

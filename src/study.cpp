@@ -95,7 +95,7 @@ std::string formatStudy(const StudyResult& s, const StudyOptions& options, std::
         else
             out += fmt("  Stability: neighbours score %s on average (%s of the winner's %s), worst %s, over %zu neighbours.\n",
                        num(s.stability->meanNeighbour).c_str(),
-                       s.stability->score != 0 ? pct(s.stability->meanNeighbour / s.stability->score).c_str() : "n/a",
+                       s.stability->score > 0 ? pct(s.stability->meanNeighbour / s.stability->score).c_str() : "n/a",
                        num(s.stability->score).c_str(), num(s.stability->worstNeighbour).c_str(),
                        s.stability->neighbours);
     }

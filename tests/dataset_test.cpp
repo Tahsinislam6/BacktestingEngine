@@ -24,14 +24,16 @@ protected:
 
     void TearDown() override { fs::remove_all(dir_); }
 
-    // rows: {"2025-01-01", close}; open/high/low are filled in around the close
-    void writeCsv(const std::string& filename, const std::vector<std::pair<std::string, double>>& rows)
+    // 2025-01-01 00:00 UTC in milliseconds, plus whole days
+    static long long day(int n) { return 1735689600000LL + n * 86400000LL; }
+
+    // rows: {timestamp, close}; open/high/low are filled in around the close
+    void writeCsv(const std::string& filename, const std::vector<std::pair<long long, double>>& rows)
     {
         std::ofstream out(dir_ / filename);
-        out << "\"time\",\"open\",\"high\",\"low\",\"close\",\"volume\",\"trades\",\"date\"\n";
-        for (const auto& [day, close] : rows)
-            out << "\"" << day << " 22:00:00\"," << close << "," << close + 1 << "," << close - 1 << ","
-                << close << ",0,0,\"" << day << "\"\n";
+        out << "timestamp,open,high,low,close,volume\n";
+        for (const auto& [time, close] : rows)
+            out << time << "," << close << "," << close + 1 << "," << close - 1 << "," << close << ",0\n";
     }
 
     void writeText(const std::string& filename, const std::string& text)
@@ -49,6 +51,11 @@ protected:
 TEST(SymbolFromFilenameTest, CutsAtForex)
 {
     EXPECT_EQ(symbolFromFilename("EUR_GBP_forex_1d_2025-01-01_2025-12-31.csv"), "EUR_GBP");
+}
+
+TEST(SymbolFromFilenameTest, CutsAt1d)
+{
+    EXPECT_EQ(symbolFromFilename("EURUSD_1d_2016-01-01_2025-12-31.csv"), "EURUSD");
 }
 
 TEST(SymbolFromFilenameTest, DropsTheFolder)
@@ -103,8 +110,8 @@ TEST_F(DatasetTest, AFileIsNotAFolder)
 
 TEST_F(DatasetTest, LoadsOneAssetPerFileInNameOrder)
 {
-    writeCsv("USD_JPY_forex_1d_x.csv", {{"2025-01-01", 150}, {"2025-01-02", 151}});
-    writeCsv("EUR_GBP_forex_1d_x.csv", {{"2025-01-01", 0.8}, {"2025-01-02", 0.9}});
+    writeCsv("USD_JPY_forex_1d_x.csv", {{day(0), 150}, {day(1), 151}});
+    writeCsv("EUR_GBP_forex_1d_x.csv", {{day(0), 0.8}, {day(1), 0.9}});
 
     const AlignedData d = loadFolder(dir());
 
@@ -118,8 +125,8 @@ TEST_F(DatasetTest, LoadsOneAssetPerFileInNameOrder)
 
 TEST_F(DatasetTest, DaysOneAssetLacksBecomeGaps)
 {
-    writeCsv("A_forex.csv", {{"2025-01-01", 1}, {"2025-01-02", 2}, {"2025-01-03", 3}});
-    writeCsv("B_forex.csv", {{"2025-01-01", 10}, {"2025-01-03", 30}});
+    writeCsv("A_forex.csv", {{day(0), 1}, {day(1), 2}, {day(2), 3}});
+    writeCsv("B_forex.csv", {{day(0), 10}, {day(2), 30}});
 
     const AlignedData d = loadFolder(dir());
 
@@ -128,9 +135,48 @@ TEST_F(DatasetTest, DaysOneAssetLacksBecomeGaps)
     EXPECT_FALSE(d.snapshots[1].bars[1].has_value());
 }
 
+// 2016-01-03 was a Sunday: a Sunday bar followed by a Monday bar
+static const long long kSundayMs = 1451779200000LL;
+static const long long kMondayMs = kSundayMs + 86400000LL;
+
+TEST_F(DatasetTest, SundayBarsAreFoldedIntoMondayByDefault)
+{
+    writeCsv("A_1d.csv", {{kSundayMs, 5}, {kMondayMs, 9}});       // writeCsv puts high = close+1, low = close-1
+
+    const AlignedData d = loadFolder(dir());
+
+    ASSERT_EQ(d.snapshots.size(), 1u);
+    EXPECT_EQ(d.snapshots[0].timestamp, kMondayMs);
+    EXPECT_DOUBLE_EQ(d.snapshots[0].bars[0]->open, 5);            // Sunday's open
+    EXPECT_DOUBLE_EQ(d.snapshots[0].bars[0]->close, 9);           // Monday's close
+    EXPECT_DOUBLE_EQ(d.snapshots[0].bars[0]->high, 10);
+    EXPECT_DOUBLE_EQ(d.snapshots[0].bars[0]->low, 4);
+}
+
+TEST_F(DatasetTest, SundayBarsCanBeKept)
+{
+    writeCsv("A_1d.csv", {{kSundayMs, 5}, {kMondayMs, 9}});
+
+    const AlignedData d = loadFolder(dir(), false);
+
+    EXPECT_EQ(d.snapshots.size(), 2u);
+}
+
+TEST_F(DatasetTest, EveryFileIsMergedSoTheyStillLineUp)
+{
+    writeCsv("A_1d.csv", {{kSundayMs, 1}, {kMondayMs, 2}, {kMondayMs + 86400000LL, 3}});
+    writeCsv("B_1d.csv", {{kSundayMs, 10}, {kMondayMs, 20}, {kMondayMs + 86400000LL, 30}});
+
+    const AlignedData d = loadFolder(dir());
+
+    ASSERT_EQ(d.snapshots.size(), 2u);
+    EXPECT_TRUE(d.snapshots[0].bars[0].has_value());
+    EXPECT_TRUE(d.snapshots[0].bars[1].has_value());
+}
+
 TEST_F(DatasetTest, ASingleFileWorks)
 {
-    writeCsv("A_forex.csv", {{"2025-01-01", 1}});
+    writeCsv("A_forex.csv", {{day(0), 1}});
 
     const AlignedData d = loadFolder(dir());
 
@@ -140,7 +186,7 @@ TEST_F(DatasetTest, ASingleFileWorks)
 
 TEST_F(DatasetTest, OtherFilesAreIgnored)
 {
-    writeCsv("A_forex.csv", {{"2025-01-01", 1}});
+    writeCsv("A_forex.csv", {{day(0), 1}});
     writeText("readme.txt", "not data");
 
     EXPECT_EQ(loadFolder(dir()).symbols.size(), 1u);
@@ -155,15 +201,15 @@ TEST_F(DatasetTest, AFolderWithoutCsvFilesThrows)
 
 TEST_F(DatasetTest, TwoFilesWithTheSameSymbolThrow)
 {
-    writeCsv("EUR_GBP_forex_1d_2024.csv", {{"2024-01-01", 1}});
-    writeCsv("EUR_GBP_forex_1d_2025.csv", {{"2025-01-01", 1}});
+    writeCsv("EUR_GBP_forex_1d_2024.csv", {{day(-366), 1}});
+    writeCsv("EUR_GBP_forex_1d_2025.csv", {{day(0), 1}});
 
     EXPECT_THROW(loadFolder(dir()), std::runtime_error);
 }
 
 TEST_F(DatasetTest, ABadFileIsReportedNotSkipped)
 {
-    writeCsv("A_forex.csv", {{"2025-01-01", 1}});
+    writeCsv("A_forex.csv", {{day(0), 1}});
     writeText("B_forex.csv", "header\n1,2\n");
 
     EXPECT_THROW(loadFolder(dir()), std::runtime_error);

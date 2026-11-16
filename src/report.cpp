@@ -96,7 +96,7 @@ std::string rankedCsv(const std::vector<Ranked>& ranked)
         out += "," + std::to_string(e.metrics.trades);
         for (double v : {e.metrics.totalReturn, e.metrics.cagr, e.metrics.maxDrawdown, e.metrics.sharpe,
                          e.metrics.sortino, e.metrics.calmar, e.metrics.winRate, e.metrics.profitFactor,
-                         e.metrics.expectancy, e.metrics.avgHoldingSeconds / 86400.0,
+                         e.metrics.expectancy, e.metrics.avgHoldingTime / static_cast<double>(kTimestampUnitsPerDay),
                          e.capture.efficiency})
             out += "," + num(v);
         out += "," + std::to_string(e.capture.legs) + "," + num(e.capture.rightShare) + "\n";

@@ -7,13 +7,14 @@
 #include <stdexcept>
 
 #include "loader.hpp"
+#include "sundays.hpp"
 
 namespace fs = std::filesystem;
 
 std::string symbolFromFilename(const std::string& path)
 {
     std::string stem = fs::path(path).stem().string();
-    const std::size_t cut = stem.find("_forex");
+    const std::size_t cut = std::min(stem.find("_forex"), stem.find("_1d"));     // npos if neither is there
     if (cut != std::string::npos)
         stem.erase(cut);
     return stem;
@@ -38,7 +39,7 @@ std::vector<std::string> csvFilesIn(const std::string& folder)
     return files;
 }
 
-AlignedData loadFolder(const std::string& folder)
+AlignedData loadFolder(const std::string& folder, bool mergeSundays)
 {
     const std::vector<std::string> files = csvFilesIn(folder);
     if (files.empty())
@@ -51,7 +52,8 @@ AlignedData loadFolder(const std::string& folder)
         const std::string symbol = symbolFromFilename(file);
         if (!seen.insert(symbol).second)
             throw std::runtime_error("Two files give the symbol " + symbol + " in " + folder);
-        series.push_back(loadCsv(file, symbol));
+        BarSeries loaded = loadCsv(file, symbol);
+        series.push_back(mergeSundays ? mergeSundayBars(loaded) : loaded);
     }
     return align(series);
 }

@@ -142,7 +142,7 @@ TEST(RankedCsvTest, WritesTheMetricsInTheirColumns)
     r.evaluation.metrics.totalReturn = 0.25;
     r.evaluation.metrics.maxDrawdown = 0.1;
     r.evaluation.metrics.winRate = 0.6;
-    r.evaluation.metrics.avgHoldingSeconds = 2 * 86400.0;
+    r.evaluation.metrics.avgHoldingTime = 2.0 * static_cast<double>(kTimestampUnitsPerDay);
     r.evaluation.capture.efficiency = 0.3;
     r.evaluation.capture.legs = 12;
     r.evaluation.capture.rightShare = 0.75;

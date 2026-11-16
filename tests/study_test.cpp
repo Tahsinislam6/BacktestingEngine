@@ -218,6 +218,18 @@ TEST(FormatStudyTest, ShowsTheSectionsThatWereRun)
     EXPECT_NE(text.find("A0"), std::string::npos);                // the per-asset tables
 }
 
+TEST(FormatStudyTest, NoPercentageIsShownForANegativeWinnerScore)
+{
+    // on a falling line, levels 50 to 90 are all long the whole way down: every run loses
+    StudyOptions o = options(0);
+    const std::vector<ParamRange> allLong{{"level", 50, 90, 20}};
+
+    const std::string text = formatStudy(runStudy(falling(), nullptr, allLong, factory, o), o, 5);
+
+    EXPECT_NE(text.find("Stability"), std::string::npos);
+    EXPECT_NE(text.find("n/a of the winner"), std::string::npos);
+}
+
 TEST(FormatStudyTest, LeavesOutSectionsThatWereNotRun)
 {
     const StudyOptions o = options();
