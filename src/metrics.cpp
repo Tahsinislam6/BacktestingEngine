@@ -27,6 +27,36 @@ Metrics computeMetrics(const BacktestResult& result, double startingCash, double
             previous = e;
         }
 
+        double mean{};
+        for (double r : returns)
+            mean += r;
+        mean /= n;
+
+        if (returns.size() >= 2)
+        {
+            double sumSq{};
+            for (double r : returns)
+                sumSq += (r - mean) * (r - mean);
+            const double stdev = std::sqrt(sumSq / (n - 1.0));
+            if (stdev > 1e-12)
+                m.sharpe = mean / stdev * std::sqrt(periodsPerYear);
+        }
+
+        double downSq{};
+        for (double r: returns)
+        {
+            if (r < 0.0)
+                downSq += r * r;
+        }
+        const double donwside = std::sqrt(downSq / n);
+        if (donwside > 1e-12)
+            m.sortino = mean / donwside * std::sqrt(periodsPerYear);
+
+        if (m.maxDrawdown > 0.0)
+            m.calmar = m.cagr / m.maxDrawdown;
+            
+
+
         
     }
 
