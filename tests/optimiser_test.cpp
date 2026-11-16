@@ -352,7 +352,7 @@ TEST(RunGridTest, DefaultOptions)
     const GridOptions o;
 
     EXPECT_DOUBLE_EQ(o.startingCash, 100000.0);
-    EXPECT_DOUBLE_EQ(o.periodsPerYear, 252.0);
+    EXPECT_DOUBLE_EQ(o.periodsPerYear, 260.0);
     EXPECT_DOUBLE_EQ(o.zigzagMultiple, 3.0);
     EXPECT_EQ(o.atrPeriod, 14);
     EXPECT_EQ(o.threads, 0);

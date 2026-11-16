@@ -145,11 +145,11 @@ TEST(MetricsSharpeTest, AnnualisingMultipliesBySqrtOfPeriods)
     EXPECT_NEAR(four, 2.0 * one, 1e-9);
 }
 
-TEST(MetricsSharpeTest, DefaultPeriodsPerYearIs252)
+TEST(MetricsSharpeTest, DefaultPeriodsPerYearIs260)
 {
     const BacktestResult r = curve({110, 99, 108.9});
 
-    EXPECT_DOUBLE_EQ(computeMetrics(r, 100).sharpe, computeMetrics(r, 100, 252).sharpe);
+    EXPECT_DOUBLE_EQ(computeMetrics(r, 100).sharpe, computeMetrics(r, 100, 260).sharpe);
 }
 
 TEST(MetricsSharpeTest, ConstantReturnsGiveZeroNotInfinity)

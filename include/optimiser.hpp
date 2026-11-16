@@ -22,7 +22,7 @@ using StrategyFactory = std::function<std::unique_ptr<MultiStrategy>(const Param
 struct GridOptions
 {
     double startingCash{100000.0};
-    double periodsPerYear{252.0};
+    double periodsPerYear{260.0};
     double zigzagMultiple{3.0};     // ZigZag threshold = zigzagMultiple * ATR(atrPeriod), for capture efficiency
     int atrPeriod{14};
     int threads{0};                 // 0 = one per hardware core; 1 = run in the calling thread
