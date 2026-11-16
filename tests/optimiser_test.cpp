@@ -555,3 +555,70 @@ TEST(OptimiseTest, BadRangesAreReportedBeforeAnythingRuns)
 {
     EXPECT_THROW(optimise(risingLine(), {{"level", 5, 1, 1}}, fixedLineFactory), std::invalid_argument);
 }
+
+// ---------- parallelFor ----------
+
+#include <atomic>
+#include <thread>
+
+TEST(ParallelForTest, CallsEveryIndexExactlyOnce)
+{
+    std::vector<std::atomic<int>> counts(1000);
+
+    parallelFor(1000, 4, [&](std::size_t i) { ++counts[i]; });
+
+    for (const auto& c : counts)
+        EXPECT_EQ(c.load(), 1);
+}
+
+TEST(ParallelForTest, ZeroCountCallsNothing)
+{
+    int calls = 0;
+
+    parallelFor(0, 4, [&](std::size_t) { ++calls; });
+
+    EXPECT_EQ(calls, 0);
+}
+
+TEST(ParallelForTest, OneThreadRunsInTheCallingThread)
+{
+    const std::thread::id caller = std::this_thread::get_id();
+    bool allHere = true;
+
+    parallelFor(10, 1, [&](std::size_t) { allHere = allHere && std::this_thread::get_id() == caller; });
+
+    EXPECT_TRUE(allHere);
+}
+
+TEST(ParallelForTest, MoreThreadsThanWorkIsFine)
+{
+    std::vector<std::atomic<int>> counts(3);
+
+    parallelFor(3, 32, [&](std::size_t i) { ++counts[i]; });
+
+    for (const auto& c : counts)
+        EXPECT_EQ(c.load(), 1);
+}
+
+TEST(ParallelForTest, AnExceptionIsRethrown)
+{
+    EXPECT_THROW(parallelFor(50, 1, [](std::size_t i) { if (i == 7) throw std::runtime_error("boom"); }),
+                 std::runtime_error);
+    EXPECT_THROW(parallelFor(50, 4, [](std::size_t i) { if (i == 7) throw std::runtime_error("boom"); }),
+                 std::runtime_error);
+}
+
+TEST(ParallelForTest, AfterAFailureTheRemainingWorkIsSkipped)
+{
+    int calls = 0;
+
+    EXPECT_THROW(parallelFor(100, 1, [&](std::size_t i) { ++calls; if (i == 3) throw std::runtime_error("x"); }),
+                 std::runtime_error);
+
+    EXPECT_EQ(calls, 4);        // indexes 0, 1, 2 and the failing 3
+}
+
+TEST(ParallelForTest, ANegativeThreadCountIsRejected)
+{
+    EXPECT_THROW(parallelFor(5, -1, [](std::size_t) {}), std::invalid_argument);
+}

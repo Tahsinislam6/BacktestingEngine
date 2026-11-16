@@ -41,6 +41,12 @@ struct Evaluation
 Evaluation evaluate(const AlignedData& data, const Params& params, const StrategyFactory& factory,
                     const std::vector<std::vector<Pivot>>& pivots, const GridOptions& options = GridOptions{});
 
+// Calls body(0), body(1), ... body(count-1), spread over `threads` threads (0 = one per hardware core,
+// 1 = all in the calling thread). Each index is used exactly once. The body must only touch its own slot
+// of any shared output. If any call throws, the first exception is rethrown here once the threads have
+// stopped, and indexes not yet started are skipped. Throws std::invalid_argument if threads < 0.
+void parallelFor(std::size_t count, int threads, const std::function<void(std::size_t)>& body);
+
 // Every parameter set, run in parallel. results[i] belongs to grid[i], whatever the number of threads,
 // and the numbers do not depend on the thread count. If any run throws, the exception is rethrown here.
 // Throws std::invalid_argument if options.threads < 0.

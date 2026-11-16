@@ -24,6 +24,61 @@ Evaluation evaluate(const AlignedData& data, const Params& params, const Strateg
     return e;
 }
 
+void parallelFor(std::size_t count, int threads, const std::function<void(std::size_t)>& body)
+{
+    if (threads < 0)
+        throw std::invalid_argument("threads must not be negative");
+    if (count == 0)
+        return;
+
+    std::size_t n = threads > 0 ? static_cast<std::size_t>(threads)
+                                : std::max(1u, std::thread::hardware_concurrency());
+    n = std::min(n, count);
+
+    // Workers take the next unclaimed index.
+    std::atomic<std::size_t> next{0};
+    std::atomic<bool> failed{false};
+    std::exception_ptr error;
+    std::mutex errorMutex;
+
+    auto worker = [&]
+    {
+        while (!failed)
+        {
+            const std::size_t i = next.fetch_add(1);
+            if (i >= count)
+                return;
+            try
+            {
+                body(i);
+            }
+            catch (...)
+            {
+                std::lock_guard<std::mutex> lock(errorMutex);
+                if (!error)
+                    error = std::current_exception();
+                failed = true;
+            }
+        }
+    };
+
+    if (n == 1)
+    {
+        worker();
+    }
+    else
+    {
+        std::vector<std::thread> pool;
+        for (std::size_t t = 0; t < n; ++t)
+            pool.emplace_back(worker);
+        for (std::thread& t : pool)
+            t.join();
+    }
+
+    if (error)
+        std::rethrow_exception(error);
+}
+
 std::vector<Evaluation> runGrid(const AlignedData& data, const std::vector<Params>& grid,
                                 const StrategyFactory& factory, const GridOptions& options)
 {
@@ -37,52 +92,8 @@ std::vector<Evaluation> runGrid(const AlignedData& data, const std::vector<Param
     // Same for every run, so compute it once.
     const std::vector<std::vector<Pivot>> pivots = zigzagAll(data, options.zigzagMultiple, options.atrPeriod);
 
-    std::size_t threads = options.threads > 0 ? static_cast<std::size_t>(options.threads)
-                                              : std::max(1u, std::thread::hardware_concurrency());
-    threads = std::min(threads, grid.size());
-
-    // Workers take the next unclaimed index and write only into their own slot of `results`.
-    std::atomic<std::size_t> next{0};
-    std::atomic<bool> failed{false};
-    std::exception_ptr error;
-    std::mutex errorMutex;
-
-    auto worker = [&]
-    {
-        while (!failed)
-        {
-            const std::size_t i = next.fetch_add(1);
-            if (i >= grid.size())
-                return;
-            try
-            {
-                results[i] = evaluate(data, grid[i], factory, pivots, options);
-            }
-            catch (...)
-            {
-                std::lock_guard<std::mutex> lock(errorMutex);
-                if (!error)
-                    error = std::current_exception();
-                failed = true;
-            }
-        }
-    };
-
-    if (threads == 1)
-    {
-        worker();
-    }
-    else
-    {
-        std::vector<std::thread> pool;
-        for (std::size_t t = 0; t < threads; ++t)
-            pool.emplace_back(worker);
-        for (std::thread& t : pool)
-            t.join();
-    }
-
-    if (error)
-        std::rethrow_exception(error);
+    parallelFor(grid.size(), options.threads,
+                [&](std::size_t i) { results[i] = evaluate(data, grid[i], factory, pivots, options); });
     return results;
 }
 
