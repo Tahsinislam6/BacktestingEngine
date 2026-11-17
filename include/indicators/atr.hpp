@@ -4,7 +4,7 @@
 #include <cmath>
 #include <stdexcept>
 
-#include "indicators/core.hpp"
+#include "core.hpp"
 
 // Average True Range
 class Atr

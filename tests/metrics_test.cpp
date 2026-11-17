@@ -145,11 +145,11 @@ TEST(MetricsSharpeTest, AnnualisingMultipliesBySqrtOfPeriods)
     EXPECT_NEAR(four, 2.0 * one, 1e-9);
 }
 
-TEST(MetricsSharpeTest, DefaultPeriodsPerYearIs252)
+TEST(MetricsSharpeTest, DefaultPeriodsPerYearIs260)
 {
     const BacktestResult r = curve({110, 99, 108.9});
 
-    EXPECT_DOUBLE_EQ(computeMetrics(r, 100).sharpe, computeMetrics(r, 100, 252).sharpe);
+    EXPECT_DOUBLE_EQ(computeMetrics(r, 100).sharpe, computeMetrics(r, 100, 260).sharpe);
 }
 
 TEST(MetricsSharpeTest, ConstantReturnsGiveZeroNotInfinity)
@@ -229,7 +229,7 @@ TEST(MetricsTradesTest, NoTradesMeansEveryTradeMetricIsZero)
     EXPECT_DOUBLE_EQ(m.winRate, 0.0);
     EXPECT_DOUBLE_EQ(m.profitFactor, 0.0);
     EXPECT_DOUBLE_EQ(m.expectancy, 0.0);
-    EXPECT_DOUBLE_EQ(m.avgHoldingSeconds, 0.0);
+    EXPECT_DOUBLE_EQ(m.avgHoldingTime, 0.0);
 }
 
 TEST(MetricsTradesTest, CountsClosedTrades)
@@ -289,7 +289,7 @@ TEST(MetricsTradesTest, AverageHoldingTime)
     r.closedTrades.push_back(trade(1, 0, 100));     // held 100
     r.closedTrades.push_back(trade(1, 100, 400));   // held 300
 
-    EXPECT_DOUBLE_EQ(computeMetrics(r, 100).avgHoldingSeconds, 200.0);
+    EXPECT_DOUBLE_EQ(computeMetrics(r, 100).avgHoldingTime, 200.0);
 }
 
 TEST(MetricsTradesTest, ShortTradesUseTheirStoredPnl)

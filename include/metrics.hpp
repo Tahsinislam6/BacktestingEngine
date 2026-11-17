@@ -17,7 +17,7 @@ struct Metrics
     double winRate{};          
     double profitFactor{};     
     double expectancy{};       
-    double avgHoldingSeconds{};
+    double avgHoldingTime{};   // in the data's timestamp units (milliseconds); see kTimestampUnitsPerDay
 };
 
-Metrics computeMetrics(const BacktestResult& result, double startingCash, double periodsPerYear = 252.0);
+Metrics computeMetrics(const BacktestResult& result, double startingCash, double periodsPerYear = 260.0);

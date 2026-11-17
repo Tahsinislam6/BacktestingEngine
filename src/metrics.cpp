@@ -90,7 +90,7 @@ Metrics computeMetrics(const BacktestResult& result, double startingCash, double
         const double count = static_cast<double>(closed.size());
         m.winRate = wins / count;
         m.expectancy = totalPnL / count;
-        m.avgHoldingSeconds = totalHeld / count;
+        m.avgHoldingTime = totalHeld / count;
 
         if (grossLoss > 0.0)
             m.profitFactor = grossProfit / grossLoss;

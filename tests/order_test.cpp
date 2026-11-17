@@ -70,3 +70,15 @@ TEST(OrderTest, CloseOrderNamesTheTradeNotTheAsset)
     EXPECT_EQ(o.tradeId, 9);
     EXPECT_EQ(o.asset, 0);
 }
+
+// ---------- why a trade is closed ----------
+
+TEST(OrderTest, CloseOrderIsASignalExitByDefault)
+{
+    EXPECT_EQ(closeOrder(3).reason, ExitReason::Signal);
+}
+
+TEST(OrderTest, CloseOrderCanCarryAnotherReason)
+{
+    EXPECT_EQ(closeOrder(3, ExitReason::Breakeven).reason, ExitReason::Breakeven);
+}
