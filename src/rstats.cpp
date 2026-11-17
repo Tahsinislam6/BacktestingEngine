@@ -31,6 +31,7 @@ namespace
                 case ExitReason::TakeProfit: by = &stats_.target; break;
                 case ExitReason::Breakeven: by = &stats_.breakeven; break;
                 case ExitReason::Trailing: by = &stats_.trailing; break;
+                case ExitReason::Indicator: by = &stats_.indicator; break;
                 case ExitReason::Signal: break;
             }
             ++by->count;

@@ -55,6 +55,7 @@ namespace
         out += rRow("all", r.all) + rRow("target half", r.targetHalf) + rRow("runner", r.runner);
         out += "  exits: " + exitText("stop", r.all.stop) + " | " + exitText("target", r.all.target) + " | " +
                exitText("breakeven", r.all.breakeven) + " | " + exitText("trailing", r.all.trailing) + " | " +
+               exitText("indicator", r.all.indicator) + " | " +
                exitText("cross-back", r.all.signal) + "\n";
         out += fmt("  %d trades were still open when the data ended and are not counted above.\n", r.openAtEnd);
         return out;

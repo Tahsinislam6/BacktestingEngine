@@ -139,6 +139,15 @@ TEST(RStatsTest, TrailingExitsHaveTheirOwnCount)
     EXPECT_EQ(r.all.signal.count, 1);
 }
 
+TEST(RStatsTest, IndicatorExitsHaveTheirOwnCount)
+{
+    const RReport r = computeRReport({trade(0.3, ExitReason::Indicator), trade(-0.2, ExitReason::Indicator)});
+
+    EXPECT_EQ(r.all.indicator.count, 2);
+    EXPECT_NEAR(r.all.indicator.totalR, 0.1, 1e-12);
+    EXPECT_EQ(r.all.signal.count, 0);
+}
+
 TEST(RStatsTest, TradesStillOpenAtTheEndAreCountedButNotValued)
 {
     EXPECT_EQ(computeRReport({trade(1)}, 7).openAtEnd, 7);

@@ -50,7 +50,7 @@ namespace
 CliOptions parseArgs(const std::vector<std::string>& args)
 {
     CliOptions o;
-    bool multiplierGiven = false, modeGiven = false, baselineGiven = false;
+    bool multiplierGiven = false, modeGiven = false, baselineGiven = false, nnfxOnly = false;
 
     for (std::size_t i = 0; i < args.size(); ++i)
     {
@@ -64,6 +64,20 @@ CliOptions parseArgs(const std::vector<std::string>& args)
         if (flag == "--keep-sundays")
         {
             o.keepSundays = true;
+            continue;
+        }
+
+        if (flag == "--one-candle")
+        {
+            o.oneCandle = true;
+            nnfxOnly = true;
+            continue;
+        }
+
+        if (flag == "--continuation")
+        {
+            o.continuation = true;
+            nnfxOnly = true;
             continue;
         }
 
@@ -110,6 +124,19 @@ CliOptions parseArgs(const std::vector<std::string>& args)
             if (!(o.trainFraction > 0.0 && o.trainFraction < 1.0))
                 throw std::invalid_argument("--train-fraction must be between 0 and 1");
         }
+        else if (flag == "--confirm")        { o.confirm = value(); nnfxOnly = true; }
+        else if (flag == "--exit-indicator") { o.exitIndicator = value(); nnfxOnly = true; }
+        else if (flag == "--filter")         { o.filter = value(); nnfxOnly = true; }
+        else if (flag == "--confirm-window") { o.confirmWindow = static_cast<int>(toWholeNumber(flag, value(), 1)); nnfxOnly = true; }
+        else if (flag == "--max-per-currency") { o.maxPerCurrency = static_cast<int>(toWholeNumber(flag, value(), 1)); nnfxOnly = true; }
+        else if (flag == "--max-open-risk")
+        {
+            const double v = toDouble(flag, value());
+            if (!(v > 0.0))
+                throw std::invalid_argument("--max-open-risk must be above 0 (e.g. 0.06 for 6% of equity)");
+            o.maxOpenRisk = v;
+            nnfxOnly = true;
+        }
         else if (flag == "--screen-csv")     o.screenCsv = value();
         else if (flag == "--min-beats")
         {
@@ -150,7 +177,10 @@ CliOptions parseArgs(const std::vector<std::string>& args)
         if (baselineGiven || modeGiven)
             throw std::invalid_argument("--screen runs every baseline in nnfx mode; do not combine it with --baseline or --mode");
     }
-    else if (o.noCrossExit && o.mode != Mode::Nnfx)
+    if (!o.screen && nnfxOnly && o.mode != Mode::Nnfx)
+        throw std::invalid_argument("--confirm, --exit-indicator, --filter, --confirm-window, --one-candle, --continuation, "
+                                    "--max-open-risk and --max-per-currency only apply with --mode nnfx (or --screen)");
+    if (!o.screen && o.noCrossExit && o.mode != Mode::Nnfx)
         throw std::invalid_argument("--no-cross-exit only applies with --mode nnfx");
     if (!o.screen && o.control > 0 && o.mode != Mode::Nnfx)
         throw std::invalid_argument("--control only applies with --mode nnfx");
@@ -177,6 +207,14 @@ std::string usage()
         "  --screen-csv <file>      write the screen table as csv\n"
         "  --min-beats <x>          screen: share of random runs a candidate must beat (default 0.9)\n"
         "  --min-expectancy <x>     screen: expectancy in R a candidate must reach (default 0.03)\n"
+        "  --confirm <name>         nnfx: a state component (e.g. rsi) that must agree with the direction at entry\n"
+        "  --confirm-window <n>     nnfx: bars a signal waits for its confirmation (default 7)\n"
+        "  --exit-indicator <name>  nnfx: a state component that closes a trade when it turns against it\n"
+        "  --filter <name>          nnfx: a gate component (e.g. atr_expansion) that must allow the entry\n"
+        "  --one-candle             nnfx: a signal that cannot be taken on the cross bar gets one more bar\n"
+        "  --continuation           nnfx: re-enter while price stays on the same side of the baseline\n"
+        "  --max-open-risk <x>      nnfx: cap on the total risk of open signals as a share of equity (0.06 = 6%)\n"
+        "  --max-per-currency <n>   nnfx: cap on net signals per currency (long EURUSD and GBPUSD both short USD)\n"
         "  --no-cross-exit          nnfx: do not close when the baseline crosses back (stop, target, breakeven only)\n"
         "  --control <n>            nnfx: compare the winner's direction with n random-direction runs (needs --no-cross-exit)\n"
         "  --objective <name>       sharpe (default), sortino, calmar, return or capture\n"

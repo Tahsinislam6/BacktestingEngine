@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <vector>
 
 #include "aligned.hpp"
@@ -11,6 +12,10 @@ class MultiStrategy
 {
     public:
         virtual ~MultiStrategy() = default;
+
+        // Called once before the first snapshot with the asset names (index = asset). Strategies that need to
+        // know which pair is which (e.g. currency exposure) override it; the default ignores it.
+        virtual void setSymbols(const std::vector<std::string>& symbols) { (void)symbols; }
 
         virtual std::vector<Order> onSnapshot(const Snapshot& snapshot, const Portfolio& portfolio) = 0;
 };

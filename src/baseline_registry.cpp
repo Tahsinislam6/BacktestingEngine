@@ -86,6 +86,10 @@ std::string baselineNames()
 std::function<std::size_t(const Params&)> nnfxWarmupBars(const BaselineInfo& baseline, const NnfxOptions& options)
 {
     const auto lineWarmup = baseline.warmupBars;
-    const std::size_t atr = static_cast<std::size_t>(options.atrPeriod);
-    return [lineWarmup, atr](const Params& p) { return std::max(lineWarmup(p), atr) + 1; };
+    std::size_t needed = static_cast<std::size_t>(options.atrPeriod);
+    for (std::size_t w : {options.components.confirmation ? options.components.confirmation->warmupBars() : 0,
+                          options.components.exitIndicator ? options.components.exitIndicator->warmupBars() : 0,
+                          options.components.filter ? options.components.filter->warmupBars() : 0})
+        needed = std::max(needed, w);
+    return [lineWarmup, needed](const Params& p) { return std::max(lineWarmup(p), needed) + 1; };
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -28,6 +29,14 @@ struct CliOptions
     double spreadMultiplier{1.0};       // scales every spread
     bool noCrossExit{false};            // nnfx: do not close on the baseline crossing back (ATR stop/target/breakeven only)
     int control{0};                     // nnfx: random-direction runs to compare the winner with; 0 = off
+    std::string confirm;                // nnfx: a State component that must agree with the direction at entry
+    std::string exitIndicator;          // nnfx: a State component that closes a trade when it turns against it
+    std::string filter;                 // nnfx: a Gate component that must allow the entry
+    int confirmWindow{7};               // bars a signal waits for its confirmation
+    bool oneCandle{false};              // nnfx: a signal that cannot be taken on the cross bar gets one more bar
+    bool continuation{false};           // nnfx: re-enter while price stays on the same side of the baseline
+    std::optional<double> maxOpenRisk;      // nnfx: cap on the total risk of open signals, as a share of equity
+    std::optional<int> maxPerCurrency;      // nnfx: cap on net signals per currency
     bool screen{false};                 // screen every baseline (nnfx, no cross-back exit, with the control)
     std::string screenCsv;              // optional: write the screen table here
     double minBeats{0.9};               // screen: share of random runs a candidate must beat

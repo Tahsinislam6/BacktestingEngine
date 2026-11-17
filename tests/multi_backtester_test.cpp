@@ -911,3 +911,26 @@ TEST(CloseReasonTest, ADefaultCloseOrderIsASignalExit)
 
     EXPECT_EQ(runMultiBacktest(d, s, kCash).closedTrades[0].reason, ExitReason::Signal);
 }
+
+// ---------- asset names ----------
+
+TEST(SetSymbolsTest, TheStrategyIsToldTheAssetNamesBeforeTheFirstSnapshot)
+{
+    class Recorder : public MultiStrategy
+    {
+    public:
+        void setSymbols(const std::vector<std::string>& s) override { symbols = s; callsBefore = calls; ++symbolCalls; }
+        std::vector<Order> onSnapshot(const Snapshot&, const Portfolio&) override { ++calls; return {}; }
+        std::vector<std::string> symbols;
+        int calls{0}, callsBefore{-1}, symbolCalls{0};
+    };
+
+    const AlignedData d = makeData(2, {snap(1, {flatBar(1, 100), flatBar(1, 50)}), snap(2, {flatBar(2, 100), flatBar(2, 50)})});
+    Recorder r;
+    runMultiBacktest(d, r, kCash);
+
+    EXPECT_EQ(r.symbols, d.symbols);
+    EXPECT_EQ(r.symbolCalls, 1);
+    EXPECT_EQ(r.callsBefore, 0);
+    EXPECT_EQ(r.calls, 2);
+}

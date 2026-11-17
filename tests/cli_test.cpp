@@ -346,3 +346,65 @@ TEST(CliTest, UsageMentionsTheScreenOptions)
     for (const char* flag : {"--screen", "--screen-csv", "--min-beats", "--min-expectancy"})
         EXPECT_NE(usage().find(flag), std::string::npos) << flag;
 }
+
+// ---------- components and limits ----------
+
+TEST(CliTest, TheComponentOptionsAreOffByDefault)
+{
+    const CliOptions o = parse(base());
+    EXPECT_TRUE(o.confirm.empty());
+    EXPECT_TRUE(o.exitIndicator.empty());
+    EXPECT_TRUE(o.filter.empty());
+    EXPECT_EQ(o.confirmWindow, 7);
+    EXPECT_FALSE(o.oneCandle);
+    EXPECT_FALSE(o.continuation);
+    EXPECT_FALSE(o.maxOpenRisk.has_value());
+    EXPECT_FALSE(o.maxPerCurrency.has_value());
+}
+
+TEST(CliTest, ReadsTheComponentOptions)
+{
+    const CliOptions o = parse(with({"--mode", "nnfx", "--confirm", "rsi", "--exit-indicator", "rsi", "--filter", "atr_expansion",
+                                     "--confirm-window", "5", "--one-candle", "--continuation", "--max-open-risk", "0.06",
+                                     "--max-per-currency", "2"}));
+
+    EXPECT_EQ(o.confirm, "rsi");
+    EXPECT_EQ(o.exitIndicator, "rsi");
+    EXPECT_EQ(o.filter, "atr_expansion");
+    EXPECT_EQ(o.confirmWindow, 5);
+    EXPECT_TRUE(o.oneCandle);
+    EXPECT_TRUE(o.continuation);
+    ASSERT_TRUE(o.maxOpenRisk.has_value());
+    EXPECT_DOUBLE_EQ(*o.maxOpenRisk, 0.06);
+    ASSERT_TRUE(o.maxPerCurrency.has_value());
+    EXPECT_EQ(*o.maxPerCurrency, 2);
+}
+
+TEST(CliTest, TheComponentOptionsNeedNnfxModeOrTheScreen)
+{
+    for (const char* flag : {"--one-candle", "--continuation"})
+        EXPECT_THROW(parse(with({flag})), std::invalid_argument) << flag;
+    for (const char* flag : {"--confirm", "--exit-indicator", "--filter"})
+        EXPECT_THROW(parse(with({flag, "rsi"})), std::invalid_argument) << flag;
+    EXPECT_THROW(parse(with({"--max-open-risk", "0.05"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--max-per-currency", "1"})), std::invalid_argument);
+
+    EXPECT_NO_THROW(parse(with({"--mode", "nnfx", "--one-candle"})));
+    EXPECT_NO_THROW(parse({"--screen", "--insample", "a", "--outsample", "b", "--confirm", "rsi", "--continuation"}));
+}
+
+TEST(CliTest, TheLimitsAreChecked)
+{
+    EXPECT_THROW(parse(with({"--mode", "nnfx", "--max-open-risk", "0"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--mode", "nnfx", "--max-open-risk", "-0.1"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--mode", "nnfx", "--max-open-risk", "x"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--mode", "nnfx", "--max-per-currency", "0"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--mode", "nnfx", "--confirm-window", "0"})), std::invalid_argument);
+}
+
+TEST(CliTest, UsageMentionsTheComponentOptions)
+{
+    for (const char* flag : {"--confirm", "--exit-indicator", "--filter", "--confirm-window", "--one-candle",
+                             "--continuation", "--max-open-risk", "--max-per-currency"})
+        EXPECT_NE(usage().find(flag), std::string::npos) << flag;
+}

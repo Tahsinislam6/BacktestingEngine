@@ -84,6 +84,8 @@ namespace
 BacktestResult runMultiBacktest(const AlignedData& data, MultiStrategy& strategy, double startingCash,
                                 const std::vector<double>& spreads)
 {
+    strategy.setSymbols(data.symbols);
+
     Portfolio portfolio(startingCash);
     BacktestResult result;
 

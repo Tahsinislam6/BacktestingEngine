@@ -27,6 +27,19 @@ Indicator rules (the generic tests enforce them):
   default grid under about 1000 sets and warm-up under 1000 bars.
 - Shared helpers (ATR, warm-up counter, `PerAsset`) live in `include/indicators/`. Do not put a baseline there.
 
+## Adding a confirmation, exit or filter component
+
+Same idea as a baseline: copy `templates/component_template.hpp` to `include/components/<name>.hpp`, fill in the
+three marked places, build, run the tests. CMake finds it and `tests/components_test.cpp` checks it automatically.
+- A **State** component (`state()` = -1/0/+1) can be a confirmation (`--confirm <name>`, must agree with the trade's
+  direction at entry, within `--confirm-window` bars of the baseline cross) or an exit indicator
+  (`--exit-indicator <name>`, closes a trade when it turns to the opposite state).
+- A **Gate** component (`allows()`) is a filter (`--filter <name>`): the entry is only taken when it allows.
+- Component parameters are FIXED (`defaults()`), never searched: they add no tuning freedom.
+- Other nnfx switches: `--one-candle`, `--continuation`, `--max-open-risk 0.06`, `--max-per-currency 2`.
+- These work with `--mode nnfx` and with `--screen` (the same components are applied to every baseline).
+Examples: `... --mode nnfx --confirm rsi --filter atr_expansion --max-per-currency 2`
+
 ## Screening baselines (the loop to follow for each new indicator)
 
 1. Add the baseline file (above), build, run `./build/engine_tests`; fix anything the generic tests flag.
@@ -45,10 +58,11 @@ baseline use `--baseline <name> --mode nnfx [--no-cross-exit --control 200]`.
 
 ## Layout
 - `include/baselines/`   one self-contained header per baseline
+- `include/components/`  one header per confirmation / exit / filter component
 - `include/indicators/`  shared building blocks (core.hpp, atr.hpp)
 - `include/*.hpp`, `src/*.cpp`  engine, strategies (flip, nnfx), optimiser, validation, reports, CLI
 - `tests/*_test.cpp`     picked up automatically; no CMake edit needed
-- `templates/`           the baseline template (not compiled)
+- `templates/`           the baseline and component templates (not compiled)
 
 ## Conventions
 - Data: daily FX CSVs, millisecond timestamps (`timestamp,open,high,low,close,...`), one file per pair.

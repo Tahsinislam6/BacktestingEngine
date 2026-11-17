@@ -6,6 +6,7 @@
 #include "control.hpp"
 #include "costs.hpp"
 #include "dataset.hpp"
+#include "nnfx_setup.hpp"
 #include "screen.hpp"
 #include "study.hpp"
 
@@ -19,7 +20,7 @@ int main(int argc, char** argv)
         const CliOptions cli = parseArgs(std::vector<std::string>(argv + 1, argv + argc));
         if (cli.help)
         {
-            std::cout << usage() << "\nBaselines: " << baselineNames() << "\n";
+            std::cout << usage() << "\nBaselines: " << baselineNames() << "\nComponents: " << componentNames() << "\n";
             return 0;
         }
 
@@ -27,8 +28,7 @@ int main(int argc, char** argv)
         if (!cli.screen && !baseline)
             throw std::invalid_argument("unknown baseline '" + cli.baseline + "' (available: " + baselineNames() + ")");
 
-        NnfxOptions nnfx;
-        nnfx.exitOnCross = !cli.noCrossExit && !cli.screen;
+        const NnfxOptions nnfx = makeNnfxOptions(cli);
         StudyOptions study;
         StrategyFactory factory;
         if (baseline)
@@ -81,6 +81,11 @@ int main(int argc, char** argv)
 
         std::cout << "Baseline: " << baseline->name << " ("
                   << (cli.mode == Mode::Nnfx ? (cli.noCrossExit ? "nnfx, no cross-back exit" : "nnfx") : "flip") << ")\n";
+        if (cli.mode == Mode::Nnfx)
+            std::cout << "Components: confirmation " << (cli.confirm.empty() ? "-" : cli.confirm) << ", exit indicator "
+                      << (cli.exitIndicator.empty() ? "-" : cli.exitIndicator) << ", filter "
+                      << (cli.filter.empty() ? "-" : cli.filter) << (cli.continuation ? ", continuation" : "")
+                      << (cli.oneCandle ? ", one-candle rule" : "") << "\n";
         std::cout << "In-sample: " << inSample.symbols.size() << " assets, " << inSample.snapshots.size() << " days\n";
 
         AlignedData outOfSample;

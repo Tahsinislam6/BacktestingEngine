@@ -19,8 +19,8 @@ struct Trade
 
 // Signal = closed by the strategy (e.g. the baseline crossed back); Breakeven = the strategy closed a runner
 // that came back to its entry after the target half was taken; Trailing = the strategy closed a runner whose
-// close fell back from its best by a multiple of the ATR.
-enum class ExitReason {Signal, StopLoss, TakeProfit, Breakeven, Trailing};
+// close fell back from its best by a multiple of the ATR; Indicator = an exit indicator turned against the trade.
+enum class ExitReason {Signal, StopLoss, TakeProfit, Breakeven, Trailing, Indicator};
 
 struct ClosedTrade
 {

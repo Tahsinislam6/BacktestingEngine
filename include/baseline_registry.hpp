@@ -45,5 +45,5 @@ const BaselineInfo* findBaseline(const std::string& name);
 std::string baselineNames();
 
 // Bars of history a study window needs before it starts when trading `baseline` the NNFX way: the line's own
-// warm-up, the ATR, and one more bar to know which side of the line price was on.
+// warm-up, the ATR and any components in `options`, and one more bar to know which side of the line price was on.
 std::function<std::size_t(const Params&)> nnfxWarmupBars(const BaselineInfo& baseline, const NnfxOptions& options);
