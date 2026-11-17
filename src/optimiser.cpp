@@ -15,7 +15,7 @@ Evaluation evaluate(const AlignedData& data, const Params& params, const Strateg
     if (!strategy)
         throw std::invalid_argument("the strategy factory returned no strategy");
 
-    const BacktestResult run = runMultiBacktest(data, *strategy, options.startingCash);
+    const BacktestResult run = runMultiBacktest(data, *strategy, options.startingCash, spreadsFor(options.costs, data.symbols));
 
     Evaluation e;
     e.params = params;

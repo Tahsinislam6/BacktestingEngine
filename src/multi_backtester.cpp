@@ -14,8 +14,21 @@ namespace
         return slot ? &*slot : nullptr;
     }
 
+    double halfSpread(const std::vector<double>& spreads, int asset)
+    {
+        if (asset < 0 || static_cast<std::size_t>(asset) >= spreads.size())
+            return 0.0;
+        return spreads[asset] / 2.0;
+    }
+
+    // The price an exit gets: a long is sold (bid, lower), a short is bought back (ask, higher).
+    double exitFill(Direction d, double price, double half)
+    {
+        return d == Direction::Long ? price - half : price + half;
+    }
+
     // Same rules as the single-asset backtester.
-    void checkStops(Portfolio& portfolio, const Trade& t, const Bar& bar)
+    void checkStops(Portfolio& portfolio, const Trade& t, const Bar& bar, double half)
     {
         const bool isLong = t.direction == Direction::Long;
         const bool stopHit = t.stopLoss && (isLong ? bar.low <= *t.stopLoss : bar.high >= *t.stopLoss);
@@ -25,17 +38,17 @@ namespace
         {
             // get worse price between bar open or stop loss
             double price = isLong ? std::min(*t.stopLoss, bar.open) : std::max(*t.stopLoss, bar.open);
-            portfolio.close(t.id, price, bar.timestamp, ExitReason::StopLoss);
+            portfolio.close(t.id, exitFill(t.direction, price, half), bar.timestamp, ExitReason::StopLoss);
         }
         else if (targetHit)
         {
             // get better price between bar open or take profit
             double price = isLong ? std::max(*t.takeProfit, bar.open) : std::min(*t.takeProfit, bar.open);
-            portfolio.close(t.id, price, bar.timestamp, ExitReason::TakeProfit);
+            portfolio.close(t.id, exitFill(t.direction, price, half), bar.timestamp, ExitReason::TakeProfit);
         }
     }
 
-    void fill(Portfolio& portfolio, const Order& order, const Snapshot& snapshot)
+    void fill(Portfolio& portfolio, const Order& order, const Snapshot& snapshot, const std::vector<double>& spreads)
     {
         if (order.type == OrderType::Open)
         {
@@ -43,7 +56,10 @@ namespace
             if (!bar)
                 return;   // no bar for that asset today (or unknown asset): ignore the order
 
-            portfolio.open(order.direction, order.quantity, bar->close, bar->timestamp,
+            // a long buys (pays more), a short sells (receives less)
+            const double half = halfSpread(spreads, order.asset);
+            const double price = order.direction == Direction::Long ? bar->close + half : bar->close - half;
+            portfolio.open(order.direction, order.quantity, price, bar->timestamp,
                            order.stopLoss, order.takeProfit, order.asset);
         }
         else
@@ -59,12 +75,14 @@ namespace
             if (!bar)
                 return;   // that asset has no bar today: the trade stays open
 
-            portfolio.close(order.tradeId, bar->close, bar->timestamp, ExitReason::Signal);
+            portfolio.close(order.tradeId, exitFill(it->direction, bar->close, halfSpread(spreads, it->asset)),
+                            bar->timestamp, ExitReason::Signal);
         }
     }
 }
 
-BacktestResult runMultiBacktest(const AlignedData& data, MultiStrategy& strategy, double startingCash)
+BacktestResult runMultiBacktest(const AlignedData& data, MultiStrategy& strategy, double startingCash,
+                                const std::vector<double>& spreads)
 {
     Portfolio portfolio(startingCash);
     BacktestResult result;
@@ -90,12 +108,12 @@ BacktestResult runMultiBacktest(const AlignedData& data, MultiStrategy& strategy
         for (const Trade& t : open)
         {
             if (const Bar* bar = barOf(snapshot, t.asset))
-                checkStops(portfolio, t, *bar);
+                checkStops(portfolio, t, *bar, halfSpread(spreads, t.asset));
         }
 
         // 3. Strategy decides, then its orders are filled in the order it returned them.
         for (const Order& order : strategy.onSnapshot(snapshot, portfolio))
-            fill(portfolio, order, snapshot);
+            fill(portfolio, order, snapshot, spreads);
 
         // 4. Record equity using the marks.
         result.equityCurve.push_back(portfolio.equity());

@@ -6,6 +6,7 @@
 
 #include "aligned.hpp"
 #include "capture.hpp"
+#include "costs.hpp"
 #include "metrics.hpp"
 #include "multi_backtester.hpp"
 #include "param_space.hpp"
@@ -26,6 +27,7 @@ struct GridOptions
     double zigzagMultiple{3.0};     // ZigZag threshold = zigzagMultiple * ATR(atrPeriod), for capture efficiency
     int atrPeriod{14};
     int threads{0};                 // 0 = one per hardware core; 1 = run in the calling thread
+    CostModel costs;                // default: no cost. Spreads are looked up by the data's symbols
 };
 
 // The scores of one run.

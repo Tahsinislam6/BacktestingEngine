@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "cli.hpp"
+#include "costs.hpp"
 #include "dataset.hpp"
 #include "flip_strategy.hpp"
 #include "study.hpp"
@@ -93,6 +94,14 @@ int main(int argc, char** argv)
         study.validation.optimise.minTrades = cli.minTrades;
         study.validation.optimise.grid.threads = cli.threads;
         study.validation.optimise.grid.startingCash = cli.startingCash;
+        if (!cli.noCosts)
+        {
+            CostModel costs = typicalFxCosts();
+            if (!cli.costsFile.empty())
+                costs = loadCostsCsv(cli.costsFile, costs);
+            costs.multiplier = cli.spreadMultiplier;
+            study.validation.optimise.grid.costs = costs;
+        }
         study.validation.warmupBars = spec->second.warmupBars;
         study.trainFraction = cli.trainFraction;
         study.walkTrainBars = cli.walkTrain;

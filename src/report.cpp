@@ -135,7 +135,8 @@ std::string rankedTable(const std::vector<Ranked>& ranked, std::size_t top)
 }
 
 std::vector<AssetReport> perAssetReport(const AlignedData& data, const BacktestResult& result,
-                                        const std::vector<std::vector<Pivot>>& pivots)
+                                        const std::vector<std::vector<Pivot>>& pivots,
+                                        const std::vector<double>& spreads)
 {
     if (pivots.size() != data.symbols.size())
         throw std::invalid_argument("need one pivot list per asset");
@@ -148,18 +149,21 @@ std::vector<AssetReport> perAssetReport(const AlignedData& data, const BacktestR
 
         AssetReport r;
         r.symbol = data.symbols[a];
+        const double spread = a < spreads.size() ? spreads[a] : 0.0;
         for (const ClosedTrade& c : result.closedTrades)
         {
             if (c.trade.asset != asset)
                 continue;
             ++r.trades;
             r.pnl += c.pnl;
+            r.costPaid += spread * c.trade.quantity;
         }
         for (const Trade& t : result.openTrades)
         {
             if (t.asset != asset)
                 continue;
             ++r.trades;
+            r.costPaid += spread / 2.0 * t.quantity;
             if (!bars.empty())
                 r.pnl += pnlOf(t, bars.back().close);
         }
@@ -174,9 +178,9 @@ std::string assetTable(const std::vector<AssetReport>& assets)
     if (assets.empty())
         return "  (no assets)\n";
 
-    std::string out = fmt("  %-12s %6s %12s %9s %8s\n", "asset", "trades", "profit", "capture", "legs ok");
+    std::string out = fmt("  %-12s %6s %12s %10s %9s %8s\n", "asset", "trades", "profit", "cost", "capture", "legs ok");
     for (const AssetReport& a : assets)
-        out += fmt("  %-12s %6d %12s %9s %8s\n", a.symbol.c_str(), a.trades, number(a.pnl).c_str(),
-                   number(a.capture.efficiency).c_str(), pct(a.capture.rightShare).c_str());
+        out += fmt("  %-12s %6d %12s %10s %9s %8s\n", a.symbol.c_str(), a.trades, number(a.pnl).c_str(),
+                   number(a.costPaid).c_str(), number(a.capture.efficiency).c_str(), pct(a.capture.rightShare).c_str());
     return out;
 }

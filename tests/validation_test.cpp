@@ -794,3 +794,40 @@ TEST(NeighbourStabilityTest, WorksOnRealGridResults)
     EXPECT_LE(s.worstNeighbour, s.meanNeighbour);
     EXPECT_LE(s.meanNeighbour, s.score);                 // the winner is at least as good as its neighbours
 }
+
+// ---------- trading costs in windowed runs ----------
+
+TEST(WindowCostsTest, WindowRunsPayTheSpreadsToo)
+{
+    // rising line, long all the way; one open trade whose entry costs half a spread
+    std::vector<double> closes;
+    for (int i = 0; i <= 50; ++i)
+        closes.push_back(100 + 2 * i);
+    AlignedData d;
+    d.symbols = {"A0"};
+    for (std::size_t i = 0; i < closes.size(); ++i)
+    {
+        Snapshot s;
+        s.timestamp = static_cast<std::int64_t>(i);
+        Bar b;
+        b.timestamp = s.timestamp;
+        b.open = b.high = b.low = b.close = closes[i];
+        s.bars.push_back(b);
+        d.snapshots.push_back(s);
+    }
+    Params p;
+    p.set("level", 50);
+
+    GridOptions plain;
+    plain.threads = 1;
+    GridOptions costly = plain;
+    costly.costs.defaultPips = 1000.0;      // 0.1 price units
+
+    const WindowSpec whole{0, d.snapshots.size(), 0};
+    const WindowRun a = runWindow(d, p, fixedLineFactory, whole, plain);
+    const WindowRun b = runWindow(d, p, fixedLineFactory, whole, costly);
+
+    ASSERT_EQ(a.result.openTrades.size(), 1u);
+    EXPECT_DOUBLE_EQ(b.result.openTrades[0].entryPrice, a.result.openTrades[0].entryPrice + 0.05);
+    EXPECT_LT(b.result.finalEquity, a.result.finalEquity);
+}

@@ -331,3 +331,48 @@ TEST(AssetTableTest, NoAssets)
 {
     EXPECT_NE(assetTable({}).find("no assets"), std::string::npos);
 }
+
+// ---------- cost paid ----------
+
+TEST(PerAssetReportTest, CostPaidIsTheFullSpreadForClosedTradesAndHalfForOpenOnes)
+{
+    const AlignedData d = dataOf({{100, 110}, {50, 50}});
+    BacktestResult result;
+    ClosedTrade c;
+    c.trade.asset = 0;
+    c.trade.quantity = 3;
+    result.closedTrades.push_back(c);            // 0.2 * 3 = 0.6
+    Trade open;
+    open.asset = 0;
+    open.quantity = 5;
+    result.openTrades.push_back(open);           // 0.2 / 2 * 5 = 0.5
+
+    const std::vector<AssetReport> r = perAssetReport(d, result, {{}, {}}, {0.2, 0.7});
+
+    EXPECT_NEAR(r[0].costPaid, 1.1, 1e-12);
+    EXPECT_DOUBLE_EQ(r[1].costPaid, 0.0);
+}
+
+TEST(PerAssetReportTest, CostPaidIsZeroWithoutSpreads)
+{
+    const AlignedData d = dataOf({{100, 110}});
+    BacktestResult result;
+    ClosedTrade c;
+    c.trade.asset = 0;
+    c.trade.quantity = 3;
+    result.closedTrades.push_back(c);
+
+    EXPECT_DOUBLE_EQ(perAssetReport(d, result, {{}})[0].costPaid, 0.0);
+}
+
+TEST(AssetTableTest, ShowsTheCostPaid)
+{
+    AssetReport a;
+    a.symbol = "EURUSD";
+    a.costPaid = 12.5;
+
+    const std::string t = assetTable({a});
+
+    EXPECT_NE(t.find("cost"), std::string::npos);
+    EXPECT_NE(t.find("12.50"), std::string::npos);
+}

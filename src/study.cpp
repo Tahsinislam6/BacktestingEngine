@@ -26,7 +26,8 @@ namespace
         evaluation.metrics = computeMetrics(run.result, grid.startingCash, grid.periodsPerYear);
         evaluation.capture = run.capture;
 
-        assets = perAssetReport(data, run.result, zigzagAll(data, grid.zigzagMultiple, grid.atrPeriod));
+        assets = perAssetReport(data, run.result, zigzagAll(data, grid.zigzagMultiple, grid.atrPeriod),
+                                spreadsFor(grid.costs, data.symbols));
     }
 }
 

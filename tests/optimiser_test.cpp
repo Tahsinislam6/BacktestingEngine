@@ -622,3 +622,84 @@ TEST(ParallelForTest, ANegativeThreadCountIsRejected)
 {
     EXPECT_THROW(parallelFor(5, -1, [](std::size_t) {}), std::invalid_argument);
 }
+
+// ---------- trading costs ----------
+//
+// GridOptions::costs (a CostModel, default = no cost) is turned into one spread per asset from the data's
+// symbols and given to every backtest. A spread of 0.1 on A0 and A1 needs defaultPips = 1000 (pip 0.0001).
+
+namespace
+{
+GridOptions costly(double multiplier = 1.0)
+{
+    GridOptions o;
+    o.threads = 1;
+    o.costs.defaultPips = 1000.0;
+    o.costs.multiplier = multiplier;
+    return o;
+}
+
+Evaluation runLevel50(const GridOptions& options)
+{
+    const AlignedData d = dataFromSeries({{100, 102, 104, 106, 108, 110}, {50, 51, 52, 53, 54, 55}});
+    Params p;
+    p.set("level", 20);
+    return runGrid(d, {p}, fixedLineFactory, options)[0];
+}
+}
+
+TEST(CostsInGridTest, NoCostsIsTheDefaultAndChangesNothing)
+{
+    GridOptions plain;
+    plain.threads = 1;
+    GridOptions zeroModel = plain;
+    zeroModel.costs = CostModel{};
+
+    EXPECT_DOUBLE_EQ(runLevel50(plain).metrics.totalReturn, runLevel50(zeroModel).metrics.totalReturn);
+    EXPECT_GT(runLevel50(plain).metrics.totalReturn, 0.0);
+}
+
+TEST(CostsInGridTest, SpreadsLowerTheReturn)
+{
+    GridOptions plain;
+    plain.threads = 1;
+
+    EXPECT_LT(runLevel50(costly()).metrics.totalReturn, runLevel50(plain).metrics.totalReturn);
+}
+
+TEST(CostsInGridTest, TheLossIsHalfTheSpreadTimesQuantityOnEntryForEachOpenLong)
+{
+    // both assets: long from the first bar, still open. cost = (0.1/2) * (10000/close) per asset
+    GridOptions plain;
+    plain.threads = 1;
+    const double lost = (runLevel50(plain).metrics.totalReturn - runLevel50(costly()).metrics.totalReturn) * 100000.0;
+
+    EXPECT_NEAR(lost, 0.05 * 10000.0 / 100.0 + 0.05 * 10000.0 / 50.0, 1e-6);
+}
+
+TEST(CostsInGridTest, TheMultiplierScalesTheCost)
+{
+    GridOptions plain;
+    plain.threads = 1;
+    const double base = runLevel50(plain).metrics.totalReturn;
+    const double one = base - runLevel50(costly(1.0)).metrics.totalReturn;
+    const double two = base - runLevel50(costly(2.0)).metrics.totalReturn;
+
+    EXPECT_NEAR(two, 2 * one, 1e-12);
+}
+
+TEST(CostsInGridTest, ThreadCountStillDoesNotMatter)
+{
+    const AlignedData d = randomData(3, 200);
+    std::vector<ParamRange> ranges{{"period", 3, 30, 3}};
+    GridOptions one = costly();
+    GridOptions many = costly();
+    many.threads = 4;
+
+    const auto a = runGrid(d, expandGrid(ranges), smaFactory, one);
+    const auto b = runGrid(d, expandGrid(ranges), smaFactory, many);
+
+    ASSERT_EQ(a.size(), b.size());
+    for (std::size_t i = 0; i < a.size(); ++i)
+        EXPECT_DOUBLE_EQ(a[i].metrics.totalReturn, b[i].metrics.totalReturn);
+}

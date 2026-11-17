@@ -21,6 +21,9 @@ struct CliOptions
     double startingCash{100000.0};
     std::size_t top{15};
     bool keepSundays{false};            // true = do not fold Sunday bars into Monday
+    std::string costsFile;              // optional: "symbol,spread_pips" rows replacing the typical spreads
+    double spreadMultiplier{1.0};       // scales every spread
+    bool noCosts{false};                // true = trade with no spread at all
     bool help{false};
 };
 

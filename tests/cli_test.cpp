@@ -46,6 +46,9 @@ TEST(CliTest, DefaultsWhenOnlyTheInSampleFolderIsGiven)
     EXPECT_DOUBLE_EQ(o.startingCash, 100000.0);
     EXPECT_EQ(o.top, 15u);
     EXPECT_FALSE(o.help);
+    EXPECT_TRUE(o.costsFile.empty());
+    EXPECT_DOUBLE_EQ(o.spreadMultiplier, 1.0);
+    EXPECT_FALSE(o.noCosts);
 }
 
 TEST(CliTest, ReadsEveryOption)
@@ -203,4 +206,38 @@ TEST(CliTest, TheUsageTextMentionsEveryOption)
                              "--train-fraction", "--walk-train", "--walk-test", "--csv", "--threads",
                              "--cash", "--top", "--keep-sundays", "--help"})
         EXPECT_NE(u.find(flag), std::string::npos) << flag;
+}
+
+// ---------- costs ----------
+
+TEST(CliTest, ReadsTheCostOptions)
+{
+    const CliOptions o = parse(with({"--costs", "my.csv", "--spread-multiplier", "1.5"}));
+
+    EXPECT_EQ(o.costsFile, "my.csv");
+    EXPECT_DOUBLE_EQ(o.spreadMultiplier, 1.5);
+}
+
+TEST(CliTest, NoCostsIsAFlag)
+{
+    EXPECT_TRUE(parse(with({"--no-costs"})).noCosts);
+}
+
+TEST(CliTest, TheSpreadMultiplierCannotBeNegativeAndMustBeANumber)
+{
+    EXPECT_THROW(parse(with({"--spread-multiplier", "-1"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--spread-multiplier", "abc"})), std::invalid_argument);
+    EXPECT_NO_THROW(parse(with({"--spread-multiplier", "0"})));
+}
+
+TEST(CliTest, NoCostsCannotBeCombinedWithCostsOrAMultiplier)
+{
+    EXPECT_THROW(parse(with({"--no-costs", "--costs", "x.csv"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--no-costs", "--spread-multiplier", "2"})), std::invalid_argument);
+}
+
+TEST(CliTest, UsageMentionsTheCostOptions)
+{
+    for (const char* flag : {"--costs", "--spread-multiplier", "--no-costs"})
+        EXPECT_NE(usage().find(flag), std::string::npos) << flag;
 }

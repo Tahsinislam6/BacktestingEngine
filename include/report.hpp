@@ -33,10 +33,13 @@ struct AssetReport
     int trades{};              // closed + still open
     double pnl{};              // closed trades' profit, plus open trades valued at the asset's last close
     CaptureResult capture;
+    double costPaid{};         // spread paid: full spread x quantity per closed trade, half for a still-open one
 };
 
 // pivots[a] belong to asset a (zigzagAll). Throws std::invalid_argument if pivots.size() != symbols.size().
+// spreads[a] (price units, as given to runMultiBacktest) is only used for costPaid; empty = no cost.
 std::vector<AssetReport> perAssetReport(const AlignedData& data, const BacktestResult& result,
-                                        const std::vector<std::vector<Pivot>>& pivots);
+                                        const std::vector<std::vector<Pivot>>& pivots,
+                                        const std::vector<double>& spreads = {});
 
 std::string assetTable(const std::vector<AssetReport>& assets);

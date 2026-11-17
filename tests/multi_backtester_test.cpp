@@ -753,3 +753,140 @@ TEST(MultiBacktestTest, OneAssetGivesTheSameResultAsTheSingleAssetBacktester)
     EXPECT_EQ(single.closedTrades[0].reason, ExitReason::StopLoss);
     EXPECT_EQ(single.closedTrades[1].reason, ExitReason::Signal);
 }
+
+// ---------- spreads ----------
+//
+//   BacktestResult runMultiBacktest(data, strategy, cash, const std::vector<double>& spreads = {});
+//   spreads[a] is asset a's full spread in price units (missing entries and an empty list mean 0).
+//   Every fill is at the close, worse by half the spread: buying (open long, close short) pays +half,
+//   selling (open short, close long) gets -half. Stop and target exits are worse by half too.
+//   Open trades are still valued at the plain close.
+
+TEST(SpreadTest, ALongPaysHalfTheSpreadOnEntryAndOnExit)
+{
+    const AlignedData d = makeData(1, {snap(1, {flatBar(1, 100)}), snap(2, {flatBar(2, 110)})});
+    ScriptedMulti s({{openOrder(Direction::Long, 1, std::nullopt, std::nullopt, 0)}, {closeOrder(1)}});
+
+    const BacktestResult r = runMultiBacktest(d, s, kCash, {2.0});
+
+    ASSERT_EQ(r.closedTrades.size(), 1u);
+    EXPECT_DOUBLE_EQ(r.closedTrades[0].trade.entryPrice, 101.0);
+    EXPECT_DOUBLE_EQ(r.closedTrades[0].exitPrice, 109.0);
+    EXPECT_DOUBLE_EQ(r.closedTrades[0].pnl, 8.0);
+    EXPECT_DOUBLE_EQ(r.finalEquity, kCash + 8.0);
+}
+
+TEST(SpreadTest, AShortIsTheMirrorImage)
+{
+    const AlignedData d = makeData(1, {snap(1, {flatBar(1, 100)}), snap(2, {flatBar(2, 90)})});
+    ScriptedMulti s({{openOrder(Direction::Short, 1, std::nullopt, std::nullopt, 0)}, {closeOrder(1)}});
+
+    const BacktestResult r = runMultiBacktest(d, s, kCash, {2.0});
+
+    ASSERT_EQ(r.closedTrades.size(), 1u);
+    EXPECT_DOUBLE_EQ(r.closedTrades[0].trade.entryPrice, 99.0);
+    EXPECT_DOUBLE_EQ(r.closedTrades[0].exitPrice, 91.0);
+    EXPECT_DOUBLE_EQ(r.closedTrades[0].pnl, 8.0);
+}
+
+TEST(SpreadTest, ARoundTripAtAFlatPriceLosesExactlyOneSpreadTimesQuantity)
+{
+    const AlignedData d = makeData(1, {snap(1, {flatBar(1, 100)}), snap(2, {flatBar(2, 100)})});
+    ScriptedMulti s({{openOrder(Direction::Long, 5, std::nullopt, std::nullopt, 0)}, {closeOrder(1)}});
+
+    const BacktestResult r = runMultiBacktest(d, s, kCash, {0.4});
+
+    EXPECT_NEAR(r.closedTrades[0].pnl, -0.4 * 5, 1e-12);
+}
+
+TEST(SpreadTest, EmptyOrZeroSpreadsChangeNothing)
+{
+    const AlignedData d = makeData(1, {snap(1, {flatBar(1, 100)}), snap(2, {flatBar(2, 110)})});
+    const std::vector<std::vector<Order>> script = {{openOrder(Direction::Long, 1, std::nullopt, std::nullopt, 0)}, {closeOrder(1)}};
+
+    ScriptedMulti a(script), b(script), c(script);
+    const BacktestResult plain = runMultiBacktest(d, a, kCash);
+    const BacktestResult empty = runMultiBacktest(d, b, kCash, {});
+    const BacktestResult zero = runMultiBacktest(d, c, kCash, {0.0});
+
+    EXPECT_DOUBLE_EQ(plain.closedTrades[0].pnl, 10.0);
+    EXPECT_DOUBLE_EQ(empty.closedTrades[0].pnl, 10.0);
+    EXPECT_DOUBLE_EQ(zero.closedTrades[0].pnl, 10.0);
+}
+
+TEST(SpreadTest, EachAssetUsesItsOwnSpread)
+{
+    const AlignedData d = makeData(2, {snap(1, {flatBar(1, 100), flatBar(1, 50)}),
+                                       snap(2, {flatBar(2, 100), flatBar(2, 50)})});
+    ScriptedMulti s({{openOrder(Direction::Long, 1, std::nullopt, std::nullopt, 0),
+                      openOrder(Direction::Long, 1, std::nullopt, std::nullopt, 1)},
+                     {closeOrder(1), closeOrder(2)}});
+
+    const BacktestResult r = runMultiBacktest(d, s, kCash, {2.0, 0.5});
+
+    ASSERT_EQ(r.closedTrades.size(), 2u);
+    EXPECT_DOUBLE_EQ(r.closedTrades[0].pnl, -2.0);    // asset 0
+    EXPECT_DOUBLE_EQ(r.closedTrades[1].pnl, -0.5);    // asset 1
+}
+
+TEST(SpreadTest, AssetsBeyondTheListCostNothing)
+{
+    const AlignedData d = makeData(2, {snap(1, {flatBar(1, 100), flatBar(1, 50)}),
+                                       snap(2, {flatBar(2, 100), flatBar(2, 50)})});
+    ScriptedMulti s({{openOrder(Direction::Long, 1, std::nullopt, std::nullopt, 1)}, {closeOrder(1)}});
+
+    const BacktestResult r = runMultiBacktest(d, s, kCash, {2.0});
+
+    EXPECT_DOUBLE_EQ(r.closedTrades[0].pnl, 0.0);
+}
+
+TEST(SpreadTest, OpenTradesAreValuedAtThePlainCloseSoTheEntryCostShowsAtOnce)
+{
+    const AlignedData d = makeData(1, {snap(1, {flatBar(1, 100)})});
+    ScriptedMulti s({{openOrder(Direction::Long, 1, std::nullopt, std::nullopt, 0)}});
+
+    const BacktestResult r = runMultiBacktest(d, s, kCash, {2.0});
+
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_DOUBLE_EQ(r.openTrades[0].entryPrice, 101.0);
+    EXPECT_DOUBLE_EQ(r.equityCurve[0], kCash - 1.0);
+}
+
+TEST(SpreadTest, AFlipPaysFourHalfSpreadsInTotal)
+{
+    // long, then close + short on the same snapshot, then close; the price never moves
+    const AlignedData d = makeData(1, {snap(1, {flatBar(1, 100)}), snap(2, {flatBar(2, 100)}), snap(3, {flatBar(3, 100)})});
+    ScriptedMulti s({{openOrder(Direction::Long, 1, std::nullopt, std::nullopt, 0)},
+                     {closeOrder(1), openOrder(Direction::Short, 1, std::nullopt, std::nullopt, 0)},
+                     {closeOrder(2)}});
+
+    const BacktestResult r = runMultiBacktest(d, s, kCash, {2.0});
+
+    EXPECT_DOUBLE_EQ(r.finalEquity, kCash - 4.0);
+}
+
+TEST(SpreadTest, StopLossExitsAreWorseByHalfASpreadToo)
+{
+    // long from 100 (fills 101); stop at 95 is hit on the next bar, which opens above it
+    const AlignedData d = makeData(1, {snap(1, {flatBar(1, 100)}), snap(2, {makeBar(2, 99, 99, 90, 92)})});
+    ScriptedMulti s({{openOrder(Direction::Long, 1, 95.0, std::nullopt, 0)}});
+
+    const BacktestResult r = runMultiBacktest(d, s, kCash, {2.0});
+
+    ASSERT_EQ(r.closedTrades.size(), 1u);
+    EXPECT_EQ(r.closedTrades[0].reason, ExitReason::StopLoss);
+    EXPECT_DOUBLE_EQ(r.closedTrades[0].exitPrice, 94.0);   // 95 - half spread
+}
+
+TEST(SpreadTest, TakeProfitExitsOfAShortAreWorseByHalfASpreadToo)
+{
+    // short from 100 (fills 99); target at 90 is hit on the next bar
+    const AlignedData d = makeData(1, {snap(1, {flatBar(1, 100)}), snap(2, {makeBar(2, 99, 99, 88, 89)})});
+    ScriptedMulti s({{openOrder(Direction::Short, 1, std::nullopt, 90.0, 0)}});
+
+    const BacktestResult r = runMultiBacktest(d, s, kCash, {2.0});
+
+    ASSERT_EQ(r.closedTrades.size(), 1u);
+    EXPECT_EQ(r.closedTrades[0].reason, ExitReason::TakeProfit);
+    EXPECT_DOUBLE_EQ(r.closedTrades[0].exitPrice, 91.0);   // 90 + half spread
+}

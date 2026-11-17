@@ -43,6 +43,7 @@ namespace
 CliOptions parseArgs(const std::vector<std::string>& args)
 {
     CliOptions o;
+    bool multiplierGiven = false;
 
     for (std::size_t i = 0; i < args.size(); ++i)
     {
@@ -56,6 +57,12 @@ CliOptions parseArgs(const std::vector<std::string>& args)
         if (flag == "--keep-sundays")
         {
             o.keepSundays = true;
+            continue;
+        }
+
+        if (flag == "--no-costs")
+        {
+            o.noCosts = true;
             continue;
         }
 
@@ -83,6 +90,14 @@ CliOptions parseArgs(const std::vector<std::string>& args)
             if (!(o.trainFraction > 0.0 && o.trainFraction < 1.0))
                 throw std::invalid_argument("--train-fraction must be between 0 and 1");
         }
+        else if (flag == "--costs")          o.costsFile = value();
+        else if (flag == "--spread-multiplier")
+        {
+            o.spreadMultiplier = toDouble(flag, value());
+            if (o.spreadMultiplier < 0.0)
+                throw std::invalid_argument("--spread-multiplier must not be negative");
+            multiplierGiven = true;
+        }
         else if (flag == "--cash")
         {
             o.startingCash = toDouble(flag, value());
@@ -97,6 +112,8 @@ CliOptions parseArgs(const std::vector<std::string>& args)
         return o;
     if (o.inSampleDir.empty())
         throw std::invalid_argument("--insample is required");
+    if (o.noCosts && (!o.costsFile.empty() || multiplierGiven))
+        throw std::invalid_argument("--no-costs cannot be combined with --costs or --spread-multiplier");
     if ((o.walkTrain > 0) != (o.walkTest > 0))
         throw std::invalid_argument("--walk-train and --walk-test must be given together");
     return o;
@@ -119,6 +136,9 @@ std::string usage()
         "  --threads <n>            worker threads (default: all cores)\n"
         "  --cash <amount>          starting cash (default 100000)\n"
         "  --top <n>                rows to show in the ranked table (default 15)\n"
+        "  --costs <file>           spreads in pips, rows of symbol,spread_pips; listed pairs replace the typical values\n"
+        "  --spread-multiplier <x>  scale every spread (e.g. 2 to stress-test; default 1)\n"
+        "  --no-costs               trade with no spread at all (default: typical spreads)\n"
         "  --keep-sundays           keep the small Sunday bars as they are (default: fold them into Monday)\n"
         "  --help                   show this text\n";
 }

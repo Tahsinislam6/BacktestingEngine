@@ -60,7 +60,8 @@ namespace
         if (!strategy)
             throw std::invalid_argument("the strategy factory returned no strategy");
 
-        const BacktestResult full = runMultiBacktest(p.slice, *strategy, options.startingCash);
+        const BacktestResult full = runMultiBacktest(p.slice, *strategy, options.startingCash,
+                                                      spreadsFor(options.costs, p.slice.symbols));
         const double cash = options.startingCash;
 
         WindowRun run;
