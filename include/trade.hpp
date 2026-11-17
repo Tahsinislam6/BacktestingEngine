@@ -22,6 +22,7 @@ struct Trade
     std::optional<double> takeProfit;
     std::optional<double> initialStop;          // the stop the trade was opened with; never changes (R is measured from it)
     ExitReason stopReason{ExitReason::StopLoss};   // what a hit of `stopLoss` is recorded as
+    double swap{0.0};                           // financing accrued so far (positive = earned); part of the result
 };
 
 struct ClosedTrade

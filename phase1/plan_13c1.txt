@@ -1,0 +1,68 @@
+# Phase one, plan B: every baseline below x the 13 confirmation (C1) indicators below, in one batch
+#   ./build/backtester --grid phase1/plan_13c1.txt ... (see CLAUDE.md for the full command and the note to write)
+# STATUS: APPROVED by the user on 2026-11-17 (counting: M = 364, --prior-tries 0) and RUN ONCE the same day (0 finalists of 364 pairs). FROZEN: never edit.
+#
+# What is different from the frozen plan (phase1/plan.txt, run twice on 2026-11-17, 0 finalists both times):
+#   - the C1 pool has 13 indicators instead of 8: andean_oscillator, hlc_trend, laguerre, lwpi and ttf are new
+#   - the 28 baseline lines are IDENTICAL to the frozen plan (same fixed parameters, a test checks it), so the only thing that
+#     changes is the confirmation list. 28 x 13 = 364 pairs; 224 of them were already tested (without and with swap).
+# Counting the tries: the family is the 364 DISTINCT pairs, so M = 364 and --prior-tries is 0 (the 224 old pairs are inside this
+#   plan; counting them again as earlier tries would count the same hypotheses twice). The two earlier runs of those 224 pairs on
+#   the same data are the same hypotheses tested again, not new chances. For a stricter reading use --prior-tries 448, as in
+#   .claude/memory/decisions.md.
+# Run with swap ON (--rates ../data/rates.csv, markup 0; no Singapore rate, so USDSGD gets no interest) and the holdout
+#   ../data/pre2016-all, which no phase-one finalist has touched yet.
+# Pass rule (paste into --note BEFORE running; same as the frozen plan, with M = 364):
+#   FINALIST = out-of-sample expectancy >= 0.03R AND beats >= 90% of its own 200 random-direction runs AND adjusted beats
+#   F(z)^M >= 90% with M = 364 AND in-sample expectancy > 0.
+#   CANDIDATE = a finalist run once on 2006-2015 with the same parameters: expectancy >= 0.03R and beats >= 90%
+#   (bar 0.9^(1/F) if more than 2 finalists). No rule changes after seeing results.
+#
+# Baseline parameters: one conventional value per baseline, fixed in advance, nothing is searched. Sources as in the frozen plan:
+#   [mt4] the default in the MT4 file   [class] the default of our own class   [conv] the usual textbook value
+#   [guess] no documented default (kalman_filter and vidya: approved as guesses by the user on 2026-11-17)
+
+baseline alma                    period=9                        # [conv] ALMA window 9
+baseline atr_based_ema_variant_1 fastest=14,multiplier=300       # [mt4] EMA_Fastest 14, multiplier 300
+baseline coral                   period=34                       # [mt4] gi_84 = 34
+baseline ehlers_3pole_butterworth period=15                      # [mt4] TPSSPeriod 15
+baseline ehlers_two_pole_super_smoother period=15                # [mt4] CutoffPeriod 15
+baseline ema                     period=20                       # [class] default 20
+baseline frama                   period=16                       # [conv] FRAMA 16
+baseline gchannel                period=100                      # [mt4] ChannelPeriod 100
+baseline gd                      length=20,vf=0.7                # [conv] generalized DEMA, volume factor 0.7
+baseline geomin_ma               period=10                       # [mt4] Length 10
+baseline half_trend              amplitude=2                     # [mt4] Amplitude 2
+baseline hma                     period=21                       # [conv] HMA 21
+baseline kalman_filter           k=1,sharpness=1                 # [guess]
+baseline kama                    period=10,slow=30               # [conv] Kaufman 10 / 2 / 30
+baseline kijun                   period=26                       # [class] default 26 (Ichimoku standard)
+baseline mcginley                period=12,constant=5            # [mt4] McgPeriod 12, McgConstant 5
+baseline ptl_fast                length=3                        # [mt4] FastLength 3
+baseline range_filter_modified   atr_period=14,multiplier=3      # [mt4] iATR 14, multiplier 3
+baseline recursivema             period=2,iterations=20          # [mt4] InpPeriodMA 2, InpIteration 20
+baseline sinewma                 period=20                       # [mt4] Length 20
+baseline sma                     period=20                       # [conv] SMA 20
+baseline ssl                     period=10                       # [mt4] Lb 10
+baseline super_smoother          period=10                       # [conv] Ehlers' usual 10 (the .mq4 is not available)
+baseline t3_ma                   length=10,b=0.88                # [mt4] Length 10, b 0.88
+baseline third_gen_ma            period=220,ratio=4              # [mt4] MA_Period 220; sampling 50 -> ratio 4.4, ranges allow 4..8
+baseline trimagen                period=20                       # [mt4] InpPeriod 20
+baseline turtle_channel          trade=20,stop=10                # [mt4] TradePeriod 20, StopPeriod 10
+baseline vidya                   period=10,histper=30            # [guess]
+
+# The C1 pool: state components that can act as the first confirmation (default parameters, never searched).
+# The first eight are the frozen plan's pool, the last five were added on 2026-11-17.
+c1 rsi
+c1 aroon
+c1 bears_bulls_impulse
+c1 adx_di
+c1 cmo
+c1 disparity_index
+c1 pmo
+c1 tii
+c1 andean_oscillator
+c1 hlc_trend
+c1 laguerre
+c1 lwpi
+c1 ttf

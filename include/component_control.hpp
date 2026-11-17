@@ -54,7 +54,7 @@ struct ComponentControlResult
 // The numbers do not depend on grid.threads.
 ComponentControlResult runComponentControl(const AlignedData& data, const Params& params, const NnfxFactoryMaker& make,
                                            const NnfxOptions& options, ComponentRole role, int seeds,
-                                           const GridOptions& grid = GridOptions{});
+                                           const RunOptions& grid = RunOptions{});
 
 // `label` names the data (e.g. "out-of-sample"), `componentName` the component.
 std::string formatComponentControl(const std::string& label, const std::string& componentName, ComponentRole role,

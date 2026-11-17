@@ -149,7 +149,7 @@ NnfxComponents withStandIn(NnfxComponents c, ComponentRole role, const StandIn& 
 
 ComponentControlResult runComponentControl(const AlignedData& data, const Params& params, const NnfxFactoryMaker& make,
                                            const NnfxOptions& options, ComponentRole role, int seeds,
-                                           const GridOptions& grid)
+                                           const RunOptions& grid)
 {
     if (seeds < 1)
         throw std::invalid_argument("the component control needs at least one random run");

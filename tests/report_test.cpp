@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "nnfx_strategy.hpp"
 #include "report.hpp"
 
 namespace fs = std::filesystem;
@@ -16,16 +17,6 @@ namespace fs = std::filesystem;
 namespace
 {
 const double kInf = std::numeric_limits<double>::infinity();
-
-Ranked rankedRun(Params params, double score, int trades = 40)
-{
-    Ranked r;
-    r.score = score;
-    r.evaluation.params = params;
-    r.evaluation.metrics.trades = trades;
-    r.evaluation.metrics.sharpe = score;
-    return r;
-}
 
 std::vector<std::string> lines(const std::string& text)
 {
@@ -79,108 +70,6 @@ TEST(ParamsTextTest, NoParameters)
     EXPECT_EQ(paramsText(Params{}), "(no parameters)");
 }
 
-TEST(ObjectiveNameTest, EveryObjectiveHasItsCommandLineName)
-{
-    EXPECT_EQ(objectiveName(Objective::Sharpe), "sharpe");
-    EXPECT_EQ(objectiveName(Objective::Sortino), "sortino");
-    EXPECT_EQ(objectiveName(Objective::Calmar), "calmar");
-    EXPECT_EQ(objectiveName(Objective::TotalReturn), "return");
-    EXPECT_EQ(objectiveName(Objective::CaptureEfficiency), "capture");
-}
-
-// ---------- rankedCsv ----------
-
-TEST(RankedCsvTest, NothingRankedGivesJustTheHeader)
-{
-    const std::vector<std::string> l = lines(rankedCsv({}));
-
-    ASSERT_EQ(l.size(), 1u);
-    EXPECT_EQ(l[0].rfind("rank,score,trades,total_return", 0), 0u);
-}
-
-TEST(RankedCsvTest, ParameterColumnsFollowTheScoreInAlphabeticalOrder)
-{
-    const std::vector<std::string> l = lines(rankedCsv({rankedRun({{"period", 20}, {"atrMultiple", 1.5}}, 1.0)}));
-
-    ASSERT_EQ(l.size(), 2u);
-    const std::vector<std::string> header = fields(l[0]);
-    EXPECT_EQ(header[0], "rank");
-    EXPECT_EQ(header[1], "score");
-    EXPECT_EQ(header[2], "atrMultiple");
-    EXPECT_EQ(header[3], "period");
-    EXPECT_EQ(header[4], "trades");
-
-    const std::vector<std::string> row = fields(l[1]);
-    EXPECT_EQ(row[0], "1");
-    EXPECT_EQ(row[2], "1.5");
-    EXPECT_EQ(row[3], "20");
-    EXPECT_EQ(row[4], "40");
-}
-
-TEST(RankedCsvTest, EveryRowHasAsManyFieldsAsTheHeader)
-{
-    const std::vector<std::string> l = lines(rankedCsv({rankedRun({{"p", 1}}, 2.0), rankedRun({{"p", 2}}, 1.0)}));
-
-    ASSERT_EQ(l.size(), 3u);
-    EXPECT_EQ(fields(l[1]).size(), fields(l[0]).size());
-    EXPECT_EQ(fields(l[2]).size(), fields(l[0]).size());
-}
-
-TEST(RankedCsvTest, RowsAreNumberedFromOneInTheOrderGiven)
-{
-    const std::vector<std::string> l = lines(rankedCsv({rankedRun({{"p", 7}}, 3.0), rankedRun({{"p", 9}}, 2.0)}));
-
-    EXPECT_EQ(fields(l[1])[0], "1");
-    EXPECT_EQ(fields(l[1])[2], "7");
-    EXPECT_EQ(fields(l[2])[0], "2");
-    EXPECT_EQ(fields(l[2])[2], "9");
-}
-
-TEST(RankedCsvTest, WritesTheMetricsInTheirColumns)
-{
-    Ranked r = rankedRun({{"p", 1}}, 0.5);
-    r.evaluation.metrics.totalReturn = 0.25;
-    r.evaluation.metrics.maxDrawdown = 0.1;
-    r.evaluation.metrics.winRate = 0.6;
-    r.evaluation.metrics.avgHoldingTime = 2.0 * static_cast<double>(kTimestampUnitsPerDay);
-    r.evaluation.capture.efficiency = 0.3;
-    r.evaluation.capture.legs = 12;
-    r.evaluation.capture.rightShare = 0.75;
-
-    const std::vector<std::string> l = lines(rankedCsv({r}));
-    const std::vector<std::string> header = fields(l[0]);
-    const std::vector<std::string> row = fields(l[1]);
-
-    auto at = [&](const std::string& column)
-    {
-        for (std::size_t i = 0; i < header.size(); ++i)
-            if (header[i] == column)
-                return row[i];
-        return std::string("MISSING");
-    };
-    EXPECT_EQ(at("total_return"), "0.25");
-    EXPECT_EQ(at("max_drawdown"), "0.1");
-    EXPECT_EQ(at("win_rate"), "0.6");
-    EXPECT_EQ(at("avg_holding_days"), "2");
-    EXPECT_EQ(at("capture_efficiency"), "0.3");
-    EXPECT_EQ(at("capture_legs"), "12");
-    EXPECT_EQ(at("right_share"), "0.75");
-}
-
-TEST(RankedCsvTest, InfinityAndNaNAreWrittenAsWords)
-{
-    Ranked r = rankedRun({{"p", 1}}, 1.0);
-    r.evaluation.metrics.profitFactor = kInf;
-    r.evaluation.metrics.calmar = std::nan("");
-
-    const std::string csv = rankedCsv({r});
-
-    EXPECT_NE(csv.find("inf"), std::string::npos);
-    EXPECT_NE(csv.find("nan"), std::string::npos);
-}
-
-// ---------- writeTextFile ----------
-
 TEST(WriteTextFileTest, WritesAndReplaces)
 {
     const fs::path path = fs::temp_directory_path() / "report_test_write.txt";
@@ -202,45 +91,6 @@ TEST(WriteTextFileTest, AnUnwritablePathThrows)
 }
 
 // ---------- rankedTable ----------
-
-TEST(RankedTableTest, SaysSoWhenNothingRanked)
-{
-    EXPECT_NE(rankedTable({}, 10).find("no run reached the minimum"), std::string::npos);
-}
-
-TEST(RankedTableTest, ShowsOnlyTheTopRows)
-{
-    const std::vector<Ranked> ranked{rankedRun({{"period", 10}}, 3), rankedRun({{"period", 20}}, 2),
-                                     rankedRun({{"period", 30}}, 1)};
-
-    const std::string table = rankedTable(ranked, 2);
-
-    EXPECT_EQ(lines(table).size(), 3u);                         // header + 2 rows
-    EXPECT_NE(table.find("period=10"), std::string::npos);
-    EXPECT_NE(table.find("period=20"), std::string::npos);
-    EXPECT_EQ(table.find("period=30"), std::string::npos);
-}
-
-TEST(RankedTableTest, ShowsPercentagesAndTheTradeCount)
-{
-    Ranked r = rankedRun({{"period", 10}}, 1.25, 77);
-    r.evaluation.metrics.totalReturn = 0.123;
-    r.evaluation.metrics.maxDrawdown = 0.045;
-
-    const std::string table = rankedTable({r}, 5);
-
-    EXPECT_NE(table.find("12.3%"), std::string::npos);
-    EXPECT_NE(table.find("4.5%"), std::string::npos);
-    EXPECT_NE(table.find("77"), std::string::npos);
-    EXPECT_NE(table.find("1.25"), std::string::npos);
-}
-
-TEST(RankedTableTest, AskingForMoreRowsThanThereAreIsFine)
-{
-    EXPECT_EQ(lines(rankedTable({rankedRun({{"p", 1}}, 1)}, 50)).size(), 2u);
-}
-
-// ---------- perAssetReport ----------
 
 TEST(PerAssetReportTest, CountsTradesAndProfitPerAsset)
 {
@@ -375,4 +225,226 @@ TEST(AssetTableTest, ShowsTheCostPaid)
 
     EXPECT_NE(t.find("cost"), std::string::npos);
     EXPECT_NE(t.find("12.50"), std::string::npos);
+}
+
+// ---------- one run of a whole system ----------
+// runSystem runs the strategy once with the given parameters and gives everything a run is judged on:
+// the metrics, the per-asset table and (for strategies that place stops) the R-multiples.
+
+namespace
+{
+class FixedLine
+{
+public:
+    explicit FixedLine(double level) : level_(level) {}
+    void update(const Bar&) {}
+    bool ready() const { return true; }
+    double value() const { return level_; }
+private:
+    double level_;
+};
+
+const StrategyFactory nnfxFixedLine = [](const Params& p, std::size_t assets) -> std::unique_ptr<MultiStrategy>
+{
+    NnfxOptions o;
+    o.atrPeriod = 3;
+    o.maxDistanceAtr = 2.0;
+    return std::make_unique<NnfxStrategy<FixedLine>>(assets, FixedLine(p.get("level")), o);
+};
+
+std::vector<double> trendingSeries(int legs)
+{
+    std::vector<double> c{90};
+    for (int leg = 0; leg < legs; ++leg)
+        for (int i = 0; i < 10; ++i)
+            c.push_back(c.back() + (leg % 2 == 0 ? 2.0 : -2.0));
+    return c;
+}
+
+RunOptions oneThread()
+{
+    RunOptions o;
+    o.threads = 1;
+    return o;
+}
+}
+
+TEST(RunSystemTest, GivesTheSameNumbersAsEvaluate)
+{
+    const AlignedData d = dataOf({trendingSeries(20), trendingSeries(20)});
+    const Params p{{"level", 100}};
+
+    const SystemRun run = runSystem(d, p, nnfxFixedLine, oneThread());
+    const Evaluation direct = evaluate(d, p, nnfxFixedLine, zigzagAll(d), oneThread());
+
+    EXPECT_EQ(run.evaluation.params, p);
+    EXPECT_DOUBLE_EQ(run.evaluation.metrics.totalReturn, direct.metrics.totalReturn);
+    EXPECT_DOUBLE_EQ(run.evaluation.metrics.sharpe, direct.metrics.sharpe);
+    EXPECT_EQ(run.evaluation.metrics.trades, direct.metrics.trades);
+    EXPECT_DOUBLE_EQ(run.evaluation.capture.efficiency, direct.capture.efficiency);
+    EXPECT_GT(run.evaluation.metrics.trades, 0);
+}
+
+TEST(RunSystemTest, HasOneReportPerAssetInTheDataOrder)
+{
+    const AlignedData d = dataOf({trendingSeries(20), trendingSeries(16), trendingSeries(12)});
+    const SystemRun run = runSystem(d, Params{{"level", 100}}, nnfxFixedLine, oneThread());
+
+    ASSERT_EQ(run.assets.size(), 3u);
+    EXPECT_EQ(run.assets[0].symbol, "A0");
+    EXPECT_EQ(run.assets[2].symbol, "A2");
+    int trades = 0;
+    for (const AssetReport& a : run.assets)
+        trades += a.trades;
+    EXPECT_GE(trades, run.evaluation.metrics.trades);          // closed ones plus any still open
+}
+
+TEST(RunSystemTest, TheRMultiplesComeFromTheTradesStops)
+{
+    const AlignedData d = dataOf({trendingSeries(20)});
+    const SystemRun run = runSystem(d, Params{{"level", 100}}, nnfxFixedLine, oneThread());
+
+    ASSERT_TRUE(run.r.has_value());
+    EXPECT_GT(run.r->all.trades, 0);
+    EXPECT_EQ(run.r->all.trades, run.r->targetHalf.trades + run.r->runner.trades);
+}
+
+TEST(RunSystemTest, ADataSetWithNoTradesHasNoRMultiples)
+{
+    const AlignedData d = dataOf({std::vector<double>(40, 100.0)});            // flat: the price never crosses the line
+    const SystemRun run = runSystem(d, Params{{"level", 100}}, nnfxFixedLine, oneThread());
+
+    EXPECT_FALSE(run.r.has_value());
+    EXPECT_EQ(run.evaluation.metrics.trades, 0);
+}
+
+TEST(RunSystemTest, TheSpreadIsPaidAndShownInTheAssetTable)
+{
+    const AlignedData d = dataOf({trendingSeries(20)});
+    RunOptions costly = oneThread();
+    costly.costs.defaultPips = 10.0;
+
+    const SystemRun free = runSystem(d, Params{{"level", 100}}, nnfxFixedLine, oneThread());
+    const SystemRun paid = runSystem(d, Params{{"level", 100}}, nnfxFixedLine, costly);
+
+    EXPECT_LT(paid.evaluation.metrics.totalReturn, free.evaluation.metrics.totalReturn);
+    EXPECT_DOUBLE_EQ(free.assets[0].costPaid, 0.0);
+    EXPECT_GT(paid.assets[0].costPaid, 0.0);
+}
+
+TEST(RunSystemTest, AFactoryThatReturnsNothingThrows)
+{
+    const AlignedData d = dataOf({trendingSeries(4)});
+    const StrategyFactory none = [](const Params&, std::size_t) -> std::unique_ptr<MultiStrategy> { return nullptr; };
+    EXPECT_THROW(runSystem(d, Params{}, none, oneThread()), std::invalid_argument);
+}
+
+TEST(FormatSystemRunTest, ShowsTheLabelTheNumbersTheAssetsAndTheRTable)
+{
+    const AlignedData d = dataOf({trendingSeries(20), trendingSeries(20)});
+    const SystemRun run = runSystem(d, Params{{"level", 100}}, nnfxFixedLine, oneThread());
+
+    const std::string text = formatSystemRun("out-of-sample", run);
+
+    EXPECT_NE(text.find("OUT-OF-SAMPLE"), std::string::npos);
+    EXPECT_NE(text.find("level=100"), std::string::npos);
+    for (const char* word : {"return", "sharpe", "max drawdown", "trades", "capture", "A0", "A1", "R-MULTIPLES",
+                             "expectancy", "target half", "runner", "exits:"})
+        EXPECT_NE(text.find(word), std::string::npos) << word;
+}
+
+TEST(FormatSystemRunTest, WithoutRMultiplesThereIsNoRTable)
+{
+    const AlignedData d = dataOf({std::vector<double>(40, 100.0)});
+    const std::string text = formatSystemRun("in-sample", runSystem(d, Params{{"level", 100}}, nnfxFixedLine, oneThread()));
+
+    EXPECT_NE(text.find("IN-SAMPLE"), std::string::npos);
+    EXPECT_EQ(text.find("R-MULTIPLES"), std::string::npos);
+}
+
+// ---------- swap in the reports ----------
+
+namespace
+{
+// the closes of dataOf() are stamped 0, 1, 2 ...: spread them one day apart and name the pair so swap can apply
+AlignedData daily(AlignedData d, const std::string& symbol)
+{
+    d.symbols = {symbol};
+    for (std::size_t i = 0; i < d.snapshots.size(); ++i)
+    {
+        const std::int64_t t = static_cast<std::int64_t>(i) * kTimestampUnitsPerDay;
+        d.snapshots[i].timestamp = t;
+        d.snapshots[i].bars[0]->timestamp = t;
+    }
+    return d;
+}
+
+RunOptions withSwap(double baseRate, double quoteRate)
+{
+    RunOptions o = oneThread();
+    o.swap.rates["EUR"] = {{0, baseRate}};
+    o.swap.rates["USD"] = {{0, quoteRate}};
+    return o;
+}
+}
+
+TEST(PerAssetSwapTest, SumsTheSwapOfClosedAndOpenTrades)
+{
+    AlignedData d = dataOf({{100, 101, 102}});
+    BacktestResult result;
+    ClosedTrade c;
+    c.trade.asset = 0;
+    c.trade.quantity = 1;
+    c.trade.swap = 1.5;
+    c.pnl = 11.5;
+    result.closedTrades.push_back(c);
+    Trade open;
+    open.asset = 0;
+    open.quantity = 1;
+    open.entryPrice = 100;
+    open.swap = -0.25;
+    result.openTrades.push_back(open);
+
+    const auto r = perAssetReport(d, result, {{}});
+
+    EXPECT_DOUBLE_EQ(r[0].swap, 1.25);
+    EXPECT_DOUBLE_EQ(r[0].pnl, 11.5 + (102 - 100) - 0.25);      // closed pnl already holds its swap; an open one adds its own
+}
+
+TEST(AssetTableTest, ShowsTheSwap)
+{
+    AssetReport a;
+    a.symbol = "EURUSD";
+    a.swap = -7.25;
+
+    const std::string t = assetTable({a});
+
+    EXPECT_NE(t.find("swap"), std::string::npos);
+    EXPECT_NE(t.find("-7.25"), std::string::npos);
+}
+
+TEST(RunSystemTest, TheSwapIsPaidAndShowsInTheAssetTableAndTheReturn)
+{
+    const AlignedData d = daily(dataOf({trendingSeries(20)}), "EURUSD");
+
+    const SystemRun none = runSystem(d, Params{{"level", 100}}, nnfxFixedLine, oneThread());
+    const SystemRun swapped = runSystem(d, Params{{"level", 100}}, nnfxFixedLine, withSwap(8.0, 0.0));
+
+    EXPECT_DOUBLE_EQ(none.assets[0].swap, 0.0);
+    EXPECT_NE(swapped.assets[0].swap, 0.0);
+    EXPECT_NE(swapped.evaluation.metrics.totalReturn, none.evaluation.metrics.totalReturn);
+    EXPECT_EQ(swapped.evaluation.metrics.trades, none.evaluation.metrics.trades);      // swap changes results, not trading
+}
+
+TEST(RunSystemTest, TheMarkupAloneLowersTheReturn)
+{
+    const AlignedData d = daily(dataOf({trendingSeries(20)}), "EURUSD");
+    RunOptions markup = oneThread();
+    markup.swap.markupPct = 5.0;
+
+    const SystemRun none = runSystem(d, Params{{"level", 100}}, nnfxFixedLine, oneThread());
+    const SystemRun paid = runSystem(d, Params{{"level", 100}}, nnfxFixedLine, markup);
+
+    EXPECT_LT(paid.assets[0].swap, 0.0);
+    EXPECT_LT(paid.evaluation.metrics.totalReturn, none.evaluation.metrics.totalReturn);
 }

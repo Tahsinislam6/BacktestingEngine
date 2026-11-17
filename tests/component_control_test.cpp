@@ -129,9 +129,9 @@ Params level100()
     return p;
 }
 
-GridOptions grid(int threads = 1)
+RunOptions grid(int threads = 1)
 {
-    GridOptions g;
+    RunOptions g;
     g.threads = threads;
     return g;
 }
@@ -339,7 +339,7 @@ TEST(ComponentControlTest, CostsApplyToEveryArm)
     const World w = walk(1);
     NnfxOptions o = options();
     o.components.confirmation = std::make_shared<Listed>(nextMove(w.closes));
-    GridOptions costly = grid();
+    RunOptions costly = grid();
     costly.costs.defaultPips = 1000.0;
 
     const ComponentControlResult free = runComponentControl(w.data, level100(), maker, o, ComponentRole::Confirmation, 4, grid());

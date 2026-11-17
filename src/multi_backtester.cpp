@@ -1,6 +1,7 @@
 #include "multi_backtester.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace
 {
@@ -87,7 +88,7 @@ namespace
 }
 
 BacktestResult runMultiBacktest(const AlignedData& data, MultiStrategy& strategy, double startingCash,
-                                const std::vector<double>& spreads)
+                                const std::vector<double>& spreads, const SwapSchedule& swap)
 {
     strategy.setSymbols(data.symbols);
 
@@ -97,8 +98,27 @@ BacktestResult runMultiBacktest(const AlignedData& data, MultiStrategy& strategy
     // Last known close of every asset, used to value open trades.
     std::vector<double> marks(data.symbols.size(), 0.0);
 
-    for (const Snapshot& snapshot : data.snapshots)
+    for (std::size_t index = 0; index < data.snapshots.size(); ++index)
     {
+        const Snapshot& snapshot = data.snapshots[index];
+
+        // 0. The nights since the last snapshot, for the trades that were open at its end, at the previous close.
+        if (swap.active() && index > 0)
+        {
+            const std::int64_t gap = snapshot.timestamp - data.snapshots[index - 1].timestamp;
+            const double nights = static_cast<double>(std::llround(static_cast<double>(gap) / kTimestampUnitsPerDay));
+            if (nights > 0)
+                for (const Trade& t : portfolio.openTrades())
+                {
+                    const std::size_t a = static_cast<std::size_t>(t.asset);
+                    if (a >= marks.size() || marks[a] == 0.0)
+                        continue;
+                    const double difference = a < swap.differentialPct.size() && index - 1 < swap.differentialPct[a].size()
+                                                  ? swap.differentialPct[a][index - 1] : std::nan("");
+                    portfolio.accrueSwap(t.id, swapAmount(t.direction, t.quantity, marks[a], difference, swap.markupPct, nights));
+                }
+        }
+
         // 1. Refresh the marks for assets that have a bar today.
         for (std::size_t a = 0; a < snapshot.bars.size() && a < marks.size(); ++a)
         {

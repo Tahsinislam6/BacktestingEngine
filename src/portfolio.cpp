@@ -34,7 +34,7 @@ bool Portfolio::close(int id, double price, std::int64_t time, ExitReason why)
     c.exitPrice = price;
     c.exitTime = time;
     c.reason = why;
-    c.pnl = pnlOf(*it, price);
+    c.pnl = pnlOf(*it, price) + it->swap;
 
     cash_ += c.pnl;
     closed_.push_back(c);
@@ -55,11 +55,22 @@ bool Portfolio::moveStop(int id, double price, ExitReason why)
     return true;
 }
 
+bool Portfolio::accrueSwap(int id, double amount)
+{
+    auto it = std::find_if(open_.begin(), open_.end(),
+    [id](const Trade& t) {return t.id == id;});
+    if (it == open_.end())
+        return false;
+
+    it->swap += amount;
+    return true;
+}
+
 double Portfolio::equity(double markPrice) const
 {
     double total = cash_;
     for (const Trade t : open_)
-        total += pnlOf(t, markPrice);
+        total += pnlOf(t, markPrice) + t.swap;
     return total;
 }
 
@@ -68,6 +79,7 @@ double Portfolio::equity(const std::vector<double>& marks) const
     double total = cash_;
     for (const Trade& t : open_)
     {
+        total += t.swap;
         // Only value the trade if we have a mark for its asset.
         if (t.asset >= 0 && static_cast<std::size_t>(t.asset) < marks.size())
             total += pnlOf(t, marks[t.asset]);

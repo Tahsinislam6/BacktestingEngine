@@ -29,14 +29,15 @@ double percentileRank(double value, const std::vector<double>& samples)
 }
 
 ArmResult runArm(const AlignedData& data, const Params& params, const StrategyFactory& factory,
-                 const GridOptions& grid)
+                 const RunOptions& grid)
 {
     std::unique_ptr<MultiStrategy> strategy = factory(params, data.symbols.size());
     if (!strategy)
         throw std::invalid_argument("the strategy factory returned no strategy");
 
     const BacktestResult run = runMultiBacktest(data, *strategy, grid.startingCash,
-                                                spreadsFor(grid.costs, data.symbols));
+                                                spreadsFor(grid.costs, data.symbols),
+                                                makeSwapSchedule(grid.swap, data.symbols, data));
     const Metrics m = computeMetrics(run, grid.startingCash, grid.periodsPerYear);
     const RReport r = computeRReport(run.closedTrades);
 
@@ -111,7 +112,7 @@ namespace
 }
 
 ControlResult runDirectionControl(const AlignedData& data, const Params& params, const NnfxFactoryMaker& make,
-                                  const NnfxOptions& options, int seeds, const GridOptions& grid)
+                                  const NnfxOptions& options, int seeds, const RunOptions& grid)
 {
     if (seeds < 1)
         throw std::invalid_argument("the control needs at least one random run");

@@ -44,3 +44,9 @@ struct ParamRange
 // LAST one fastest. No ranges gives a single empty Params (one run with nothing to tune).
 // Throws std::invalid_argument for an empty or repeated name, a step <= 0 (or NaN), or to < from.
 std::vector<Params> expandGrid(const std::vector<ParamRange>& ranges);
+
+// The parameters of one run given as text: "period=26,mult=2.5" (spaces are fine, the order does not matter).
+// Every name in `allowed` must be given exactly once, no other name may appear, and each value must be a plain
+// number inside its range (from..to, both ends allowed; the step is not enforced). Text for a baseline without
+// parameters must be empty. Throws std::invalid_argument naming the problem.
+Params parseParams(const std::string& text, const std::vector<ParamRange>& allowed);

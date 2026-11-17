@@ -14,7 +14,6 @@ CliOptions cli()
 {
     CliOptions o;
     o.inSampleDir = "x";
-    o.mode = Mode::Nnfx;
     return o;
 }
 }
@@ -71,10 +70,10 @@ TEST(NnfxSetupTest, OtherSettingsAreCopied)
     EXPECT_EQ(*o.maxPerCurrency, 2);
 }
 
-TEST(NnfxSetupTest, TheScreenAlwaysSwitchesTheCrossBackExitOff)
+TEST(NnfxSetupTest, NoCrossExitSwitchesTheCrossBackExitOff)
 {
     CliOptions c = cli();
-    c.screen = true;
+    c.noCrossExit = true;
 
     EXPECT_FALSE(makeNnfxOptions(c).exitOnCross);
 }

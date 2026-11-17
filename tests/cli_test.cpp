@@ -7,6 +7,8 @@
 #include "cli.hpp"
 
 // parseArgs turns the words after the program name into options and explains anything wrong.
+// A run is a SYSTEM: a baseline with fixed parameters (--params) and at least one component. A baseline is never run
+// alone, and nothing is searched or tuned. The one other kind of run is --signal, which has no baseline at all.
 
 namespace
 {
@@ -15,10 +17,10 @@ CliOptions parse(std::vector<std::string> args)
     return parseArgs(args);
 }
 
-// the shortest valid command line
+// the shortest valid system run
 std::vector<std::string> base()
 {
-    return {"--insample", "data/in"};
+    return {"--insample", "data/in", "--baseline", "kijun", "--params", "period=26", "--confirm", "rsi"};
 }
 
 std::vector<std::string> with(std::vector<std::string> extra)
@@ -27,73 +29,62 @@ std::vector<std::string> with(std::vector<std::string> extra)
     args.insert(args.end(), extra.begin(), extra.end());
     return args;
 }
+
+// a system run whose only component is the one given (so the "at least one component" rule is met by it alone)
+std::vector<std::string> bareWith(std::vector<std::string> extra)
+{
+    std::vector<std::string> args = {"--insample", "data/in", "--baseline", "kijun", "--params", "period=26"};
+    args.insert(args.end(), extra.begin(), extra.end());
+    return args;
+}
 }
 
-TEST(CliTest, DefaultsWhenOnlyTheInSampleFolderIsGiven)
+// ---------- the basics ----------
+
+TEST(CliTest, ReadsTheSystemAndItsDefaults)
 {
     const CliOptions o = parse(base());
 
     EXPECT_EQ(o.inSampleDir, "data/in");
-    EXPECT_EQ(o.baseline, "sma");
+    EXPECT_EQ(o.baseline, "kijun");
+    EXPECT_EQ(o.params, "period=26");
+    EXPECT_EQ(o.confirm, "rsi");
     EXPECT_TRUE(o.outSampleDir.empty());
-    EXPECT_TRUE(o.csvOut.empty());
-    EXPECT_EQ(o.objective, Objective::Sharpe);
-    EXPECT_EQ(o.minTrades, 30);
     EXPECT_EQ(o.threads, 0);
-    EXPECT_DOUBLE_EQ(o.trainFraction, 0.7);
-    EXPECT_EQ(o.walkTrain, 0u);
-    EXPECT_EQ(o.walkTest, 0u);
     EXPECT_DOUBLE_EQ(o.startingCash, 100000.0);
-    EXPECT_EQ(o.top, 15u);
     EXPECT_FALSE(o.help);
     EXPECT_TRUE(o.costsFile.empty());
     EXPECT_DOUBLE_EQ(o.spreadMultiplier, 1.0);
     EXPECT_FALSE(o.noCosts);
+    EXPECT_FALSE(o.keepSundays);
 }
 
-TEST(CliTest, ReadsEveryOption)
+TEST(CliTest, ReadsEveryBasicOption)
 {
-    const CliOptions o = parse({"--insample", "a", "--outsample", "b", "--baseline", "kama", "--csv", "out.csv",
-                                "--objective", "capture", "--min-trades", "12", "--threads", "4",
-                                "--train-fraction", "0.8", "--walk-train", "750", "--walk-test", "250",
-                                "--cash", "5e4", "--top", "5"});
+    const CliOptions o = parse({"--insample", "a", "--outsample", "b", "--baseline", "kama", "--params", "period=15,slow=30",
+                                "--filter", "atr_expansion", "--threads", "4", "--cash", "5e4"});
 
     EXPECT_EQ(o.inSampleDir, "a");
     EXPECT_EQ(o.outSampleDir, "b");
     EXPECT_EQ(o.baseline, "kama");
-    EXPECT_EQ(o.csvOut, "out.csv");
-    EXPECT_EQ(o.objective, Objective::CaptureEfficiency);
-    EXPECT_EQ(o.minTrades, 12);
+    EXPECT_EQ(o.params, "period=15,slow=30");
     EXPECT_EQ(o.threads, 4);
-    EXPECT_DOUBLE_EQ(o.trainFraction, 0.8);
-    EXPECT_EQ(o.walkTrain, 750u);
-    EXPECT_EQ(o.walkTest, 250u);
     EXPECT_DOUBLE_EQ(o.startingCash, 50000.0);
-    EXPECT_EQ(o.top, 5u);
 }
 
 TEST(CliTest, KeepSundaysIsAFlagWithoutAValue)
 {
     EXPECT_FALSE(parse(base()).keepSundays);
     EXPECT_TRUE(parse(with({"--keep-sundays"})).keepSundays);
-    EXPECT_TRUE(parse({"--keep-sundays", "--insample", "x", "--top", "3"}).keepSundays);
+    EXPECT_TRUE(parse({"--keep-sundays", "--insample", "x", "--baseline", "kijun", "--params", "period=26", "--confirm", "rsi"}).keepSundays);
 }
 
 TEST(CliTest, OptionOrderDoesNotMatter)
 {
-    const CliOptions o = parse({"--top", "3", "--insample", "x", "--min-trades", "1"});
+    const CliOptions o = parse({"--confirm", "rsi", "--params", "period=26", "--insample", "x", "--baseline", "kijun"});
 
     EXPECT_EQ(o.inSampleDir, "x");
-    EXPECT_EQ(o.top, 3u);
-}
-
-TEST(CliTest, EveryObjectiveName)
-{
-    EXPECT_EQ(parse(with({"--objective", "sharpe"})).objective, Objective::Sharpe);
-    EXPECT_EQ(parse(with({"--objective", "sortino"})).objective, Objective::Sortino);
-    EXPECT_EQ(parse(with({"--objective", "calmar"})).objective, Objective::Calmar);
-    EXPECT_EQ(parse(with({"--objective", "return"})).objective, Objective::TotalReturn);
-    EXPECT_EQ(parse(with({"--objective", "capture"})).objective, Objective::CaptureEfficiency);
+    EXPECT_EQ(o.baseline, "kijun");
 }
 
 TEST(CliTest, HelpNeedsNothingElse)
@@ -106,7 +97,7 @@ TEST(CliTest, HelpNeedsNothingElse)
 TEST(CliTest, TheInSampleFolderIsRequired)
 {
     EXPECT_THROW(parse({}), std::invalid_argument);
-    EXPECT_THROW(parse({"--top", "3"}), std::invalid_argument);
+    EXPECT_THROW(parse({"--baseline", "kijun", "--params", "period=26", "--confirm", "rsi"}), std::invalid_argument);
 }
 
 TEST(CliTest, UnknownOptionsAreRejected)
@@ -118,14 +109,13 @@ TEST(CliTest, UnknownOptionsAreRejected)
 TEST(CliTest, AMissingValueIsRejected)
 {
     EXPECT_THROW(parse({"--insample"}), std::invalid_argument);
-    EXPECT_THROW(parse({"--insample", "--top", "3"}), std::invalid_argument);     // the next word is a flag
-    EXPECT_THROW(parse(with({"--csv"})), std::invalid_argument);
+    EXPECT_THROW(parse({"--insample", "--baseline", "kijun"}), std::invalid_argument);     // the next word is a flag
+    EXPECT_THROW(parse(with({"--note"})), std::invalid_argument);
 }
 
 TEST(CliTest, AFlagIsNeverTakenAsTheValueOfAnotherFlag)
 {
-    // with nothing after it to stop the mistake, "--top" would silently become the csv file name
-    EXPECT_THROW(parse(with({"--csv", "--top"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--log-dir", "--note"})), std::invalid_argument);
     EXPECT_THROW(parse(with({"--baseline", "--help"})), std::invalid_argument);
 }
 
@@ -133,50 +123,33 @@ TEST(CliTest, TheErrorNamesTheProblem)
 {
     try
     {
-        parse(with({"--min-trades", "lots"}));
+        parse(with({"--threads", "lots"}));
         FAIL() << "should have thrown";
     }
     catch (const std::invalid_argument& e)
     {
-        EXPECT_NE(std::string(e.what()).find("--min-trades"), std::string::npos);
+        EXPECT_NE(std::string(e.what()).find("--threads"), std::string::npos);
         EXPECT_NE(std::string(e.what()).find("lots"), std::string::npos);
     }
 }
 
 TEST(CliTest, NumbersMustBeWholeNumbersWhereTheyShouldBe)
 {
-    EXPECT_THROW(parse(with({"--min-trades", "12abc"})), std::invalid_argument);
-    EXPECT_THROW(parse(with({"--min-trades", "1.5"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--threads", "12abc"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--threads", "1.5"})), std::invalid_argument);
     EXPECT_THROW(parse(with({"--threads", ""})), std::invalid_argument);
-    EXPECT_THROW(parse(with({"--walk-train", "x", "--walk-test", "1"})), std::invalid_argument);
 }
 
 TEST(CliTest, DecimalNumbersWithTrailingJunkAreRejected)
 {
     EXPECT_THROW(parse(with({"--cash", "100abc"})), std::invalid_argument);
-    EXPECT_THROW(parse(with({"--train-fraction", "0.5x"})), std::invalid_argument);
     EXPECT_THROW(parse(with({"--cash", "1 000"})), std::invalid_argument);
 }
 
-TEST(CliTest, NegativeCountsAreRejected)
+TEST(CliTest, NegativeCountsAreRejectedAndZeroMeansNone)
 {
-    EXPECT_THROW(parse(with({"--min-trades", "-1"})), std::invalid_argument);
     EXPECT_THROW(parse(with({"--threads", "-2"})), std::invalid_argument);
-    EXPECT_THROW(parse(with({"--top", "-1"})), std::invalid_argument);
-}
-
-TEST(CliTest, ZeroIsFineWhereItMeansNone)
-{
-    EXPECT_EQ(parse(with({"--min-trades", "0"})).minTrades, 0);
-    EXPECT_EQ(parse(with({"--top", "0"})).top, 0u);
     EXPECT_EQ(parse(with({"--threads", "0"})).threads, 0);
-}
-
-TEST(CliTest, TheTrainFractionMustBeBetweenZeroAndOne)
-{
-    for (const char* bad : {"0", "1", "-0.2", "1.5", "abc", "nan"})
-        EXPECT_THROW(parse(with({"--train-fraction", bad})), std::invalid_argument) << bad;
-    EXPECT_DOUBLE_EQ(parse(with({"--train-fraction", "0.5"})).trainFraction, 0.5);
 }
 
 TEST(CliTest, TheStartingCashMustBePositive)
@@ -186,26 +159,62 @@ TEST(CliTest, TheStartingCashMustBePositive)
     EXPECT_THROW(parse(with({"--cash", "ten"})), std::invalid_argument);
 }
 
-TEST(CliTest, AnUnknownObjectiveIsRejected)
-{
-    EXPECT_THROW(parse(with({"--objective", "profit"})), std::invalid_argument);
-}
-
-TEST(CliTest, WalkForwardNeedsBothWindowSizes)
-{
-    EXPECT_THROW(parse(with({"--walk-train", "100"})), std::invalid_argument);
-    EXPECT_THROW(parse(with({"--walk-test", "100"})), std::invalid_argument);
-    EXPECT_NO_THROW(parse(with({"--walk-train", "100", "--walk-test", "50"})));
-}
-
 TEST(CliTest, TheUsageTextMentionsEveryOption)
 {
     const std::string u = usage();
 
-    for (const char* flag : {"--insample", "--outsample", "--baseline", "--objective", "--min-trades",
-                             "--train-fraction", "--walk-train", "--walk-test", "--csv", "--threads",
-                             "--cash", "--top", "--keep-sundays", "--help"})
+    for (const char* flag : {"--insample", "--outsample", "--baseline", "--params", "--threads", "--cash", "--keep-sundays",
+                             "--help"})
         EXPECT_NE(u.find(flag), std::string::npos) << flag;
+}
+
+// ---------- what is gone: nothing is searched or tuned, and nothing runs without a component ----------
+
+TEST(CliTest, TheSearchAndScreenOptionsAreGone)
+{
+    for (const std::vector<std::string>& gone : std::vector<std::vector<std::string>>{
+             {"--mode", "nnfx"}, {"--mode", "flip"}, {"--screen"}, {"--screen-csv", "s.csv"}, {"--objective", "sharpe"},
+             {"--min-trades", "30"}, {"--train-fraction", "0.7"}, {"--walk-train", "100"}, {"--walk-test", "50"},
+             {"--top", "5"}, {"--csv", "out.csv"}})
+        EXPECT_THROW(parse(with(gone)), std::invalid_argument) << gone.front();
+}
+
+TEST(CliTest, TheUsageTextNoLongerMentionsThem)
+{
+    for (const char* flag : {"--mode", "--screen", "--objective", "--min-trades", "--train-fraction", "--walk-train",
+                             "--walk-test", "--top", "--csv"})
+        EXPECT_EQ(usage().find(flag), std::string::npos) << flag;
+}
+
+TEST(CliTest, ABaselineIsNeverRunAlone)
+{
+    EXPECT_THROW(parse({"--insample", "a", "--baseline", "kijun", "--params", "period=26"}), std::invalid_argument);
+    for (const char* flag : {"--confirm", "--exit-indicator", "--filter"})
+        EXPECT_NO_THROW(parse(bareWith({flag, "rsi"}))) << flag;
+}
+
+TEST(CliTest, TheErrorForAMissingComponentSaysWhy)
+{
+    try
+    {
+        parse({"--insample", "a", "--baseline", "kijun", "--params", "period=26"});
+        FAIL() << "should have thrown";
+    }
+    catch (const std::invalid_argument& e)
+    {
+        EXPECT_NE(std::string(e.what()).find("--confirm"), std::string::npos);
+    }
+}
+
+TEST(CliTest, TheBaselineIsRequired)
+{
+    EXPECT_THROW(parse({"--insample", "a", "--params", "period=26", "--confirm", "rsi"}), std::invalid_argument);
+}
+
+TEST(CliTest, TheParametersAreRequiredButMayBeEmptyForABaselineWithNone)
+{
+    EXPECT_THROW(parse({"--insample", "a", "--baseline", "kijun", "--confirm", "rsi"}), std::invalid_argument);
+    EXPECT_NO_THROW(parse({"--insample", "a", "--baseline", "kijun", "--params", "", "--confirm", "rsi"}));
 }
 
 // ---------- costs ----------
@@ -242,22 +251,6 @@ TEST(CliTest, UsageMentionsTheCostOptions)
         EXPECT_NE(usage().find(flag), std::string::npos) << flag;
 }
 
-// ---------- mode ----------
-
-TEST(CliTest, ModeDefaultsToFlipAndCanBeNnfx)
-{
-    EXPECT_EQ(parse(base()).mode, Mode::Flip);
-    EXPECT_EQ(parse(with({"--mode", "nnfx"})).mode, Mode::Nnfx);
-    EXPECT_EQ(parse(with({"--mode", "flip"})).mode, Mode::Flip);
-}
-
-TEST(CliTest, ModeMustBeKnown)
-{
-    EXPECT_THROW(parse(with({"--mode", "hold"})), std::invalid_argument);
-    EXPECT_THROW(parse(with({"--mode"})), std::invalid_argument);
-    EXPECT_NE(usage().find("--mode"), std::string::npos);
-}
-
 // ---------- control ----------
 
 TEST(CliTest, ControlAndNoCrossExitAreOffByDefault)
@@ -269,24 +262,22 @@ TEST(CliTest, ControlAndNoCrossExitAreOffByDefault)
 
 TEST(CliTest, ReadsTheControlOptions)
 {
-    const CliOptions o = parse(with({"--mode", "nnfx", "--no-cross-exit", "--control", "100"}));
+    const CliOptions o = parse(with({"--no-cross-exit", "--control", "100"}));
 
     EXPECT_EQ(o.control, 100);
     EXPECT_TRUE(o.noCrossExit);
 }
 
-TEST(CliTest, TheControlNeedsNnfxModeAndNoCrossExit)
+TEST(CliTest, TheControlNeedsNoCrossExit)
 {
-    EXPECT_THROW(parse(with({"--control", "50"})), std::invalid_argument);                       // flip mode
-    EXPECT_THROW(parse(with({"--mode", "nnfx", "--control", "50"})), std::invalid_argument);     // cross-back exit on
-    EXPECT_THROW(parse(with({"--no-cross-exit"})), std::invalid_argument);                       // flip mode
-    EXPECT_NO_THROW(parse(with({"--mode", "nnfx", "--no-cross-exit"})));
+    EXPECT_THROW(parse(with({"--control", "50"})), std::invalid_argument);
+    EXPECT_NO_THROW(parse(with({"--no-cross-exit"})));
 }
 
 TEST(CliTest, TheControlCountMustBeAWholeNumber)
 {
-    EXPECT_THROW(parse(with({"--mode", "nnfx", "--no-cross-exit", "--control", "-1"})), std::invalid_argument);
-    EXPECT_THROW(parse(with({"--mode", "nnfx", "--no-cross-exit", "--control", "x"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--no-cross-exit", "--control", "-1"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--no-cross-exit", "--control", "x"})), std::invalid_argument);
 }
 
 TEST(CliTest, UsageMentionsTheControlOptions)
@@ -295,66 +286,14 @@ TEST(CliTest, UsageMentionsTheControlOptions)
     EXPECT_NE(usage().find("--no-cross-exit"), std::string::npos);
 }
 
-// ---------- screen ----------
-
-TEST(CliTest, ScreenIsOffByDefaultWithTheUsualThresholds)
-{
-    const CliOptions o = parse(base());
-    EXPECT_FALSE(o.screen);
-    EXPECT_TRUE(o.screenCsv.empty());
-    EXPECT_DOUBLE_EQ(o.minBeats, 0.9);
-    EXPECT_DOUBLE_EQ(o.minExpectancy, 0.03);
-}
-
-TEST(CliTest, ReadsTheScreenOptions)
-{
-    const CliOptions o = parse({"--screen", "--insample", "a", "--outsample", "b", "--screen-csv", "s.csv",
-                                "--min-beats", "0.8", "--min-expectancy", "0.05", "--control", "100"});
-
-    EXPECT_TRUE(o.screen);
-    EXPECT_EQ(o.screenCsv, "s.csv");
-    EXPECT_DOUBLE_EQ(o.minBeats, 0.8);
-    EXPECT_DOUBLE_EQ(o.minExpectancy, 0.05);
-    EXPECT_EQ(o.control, 100);
-}
-
-TEST(CliTest, ScreenNeedsOutOfSampleData)
-{
-    EXPECT_THROW(parse({"--screen", "--insample", "a"}), std::invalid_argument);
-}
-
-TEST(CliTest, ScreenCannotBeCombinedWithABaselineOrAMode)
-{
-    EXPECT_THROW(parse({"--screen", "--insample", "a", "--outsample", "b", "--baseline", "sma"}), std::invalid_argument);
-    EXPECT_THROW(parse({"--screen", "--insample", "a", "--outsample", "b", "--mode", "flip"}), std::invalid_argument);
-}
-
-TEST(CliTest, TheScreenThresholdsAreChecked)
-{
-    EXPECT_THROW(parse({"--screen", "--insample", "a", "--outsample", "b", "--min-beats", "1.5"}), std::invalid_argument);
-    EXPECT_THROW(parse({"--screen", "--insample", "a", "--outsample", "b", "--min-beats", "-0.1"}), std::invalid_argument);
-    EXPECT_THROW(parse({"--screen", "--insample", "a", "--outsample", "b", "--min-expectancy", "x"}), std::invalid_argument);
-}
-
-TEST(CliTest, ScreenCsvNeedsScreen)
-{
-    EXPECT_THROW(parse(with({"--screen-csv", "s.csv"})), std::invalid_argument);
-}
-
-TEST(CliTest, UsageMentionsTheScreenOptions)
-{
-    for (const char* flag : {"--screen", "--screen-csv", "--min-beats", "--min-expectancy"})
-        EXPECT_NE(usage().find(flag), std::string::npos) << flag;
-}
-
 // ---------- components and limits ----------
 
 TEST(CliTest, TheComponentOptionsAreOffByDefault)
 {
-    const CliOptions o = parse(base());
+    const CliOptions o = parse(bareWith({"--filter", "atr_expansion"}));
     EXPECT_TRUE(o.confirm.empty());
     EXPECT_TRUE(o.exitIndicator.empty());
-    EXPECT_TRUE(o.filter.empty());
+    EXPECT_EQ(o.filter, "atr_expansion");
     EXPECT_EQ(o.confirmWindow, 7);
     EXPECT_FALSE(o.oneCandle);
     EXPECT_FALSE(o.continuation);
@@ -364,12 +303,12 @@ TEST(CliTest, TheComponentOptionsAreOffByDefault)
 
 TEST(CliTest, ReadsTheComponentOptions)
 {
-    const CliOptions o = parse(with({"--mode", "nnfx", "--confirm", "rsi", "--exit-indicator", "rsi", "--filter", "atr_expansion",
+    const CliOptions o = parse(with({"--exit-indicator", "chandelier_exit", "--filter", "atr_expansion",
                                      "--confirm-window", "5", "--one-candle", "--continuation", "--max-open-risk", "0.06",
                                      "--max-per-currency", "2"}));
 
     EXPECT_EQ(o.confirm, "rsi");
-    EXPECT_EQ(o.exitIndicator, "rsi");
+    EXPECT_EQ(o.exitIndicator, "chandelier_exit");
     EXPECT_EQ(o.filter, "atr_expansion");
     EXPECT_EQ(o.confirmWindow, 5);
     EXPECT_TRUE(o.oneCandle);
@@ -380,26 +319,13 @@ TEST(CliTest, ReadsTheComponentOptions)
     EXPECT_EQ(*o.maxPerCurrency, 2);
 }
 
-TEST(CliTest, TheComponentOptionsNeedNnfxModeOrTheScreen)
-{
-    for (const char* flag : {"--one-candle", "--continuation"})
-        EXPECT_THROW(parse(with({flag})), std::invalid_argument) << flag;
-    for (const char* flag : {"--confirm", "--exit-indicator", "--filter"})
-        EXPECT_THROW(parse(with({flag, "rsi"})), std::invalid_argument) << flag;
-    EXPECT_THROW(parse(with({"--max-open-risk", "0.05"})), std::invalid_argument);
-    EXPECT_THROW(parse(with({"--max-per-currency", "1"})), std::invalid_argument);
-
-    EXPECT_NO_THROW(parse(with({"--mode", "nnfx", "--one-candle"})));
-    EXPECT_NO_THROW(parse({"--screen", "--insample", "a", "--outsample", "b", "--confirm", "rsi", "--continuation"}));
-}
-
 TEST(CliTest, TheLimitsAreChecked)
 {
-    EXPECT_THROW(parse(with({"--mode", "nnfx", "--max-open-risk", "0"})), std::invalid_argument);
-    EXPECT_THROW(parse(with({"--mode", "nnfx", "--max-open-risk", "-0.1"})), std::invalid_argument);
-    EXPECT_THROW(parse(with({"--mode", "nnfx", "--max-open-risk", "x"})), std::invalid_argument);
-    EXPECT_THROW(parse(with({"--mode", "nnfx", "--max-per-currency", "0"})), std::invalid_argument);
-    EXPECT_THROW(parse(with({"--mode", "nnfx", "--confirm-window", "0"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--max-open-risk", "0"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--max-open-risk", "-0.1"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--max-open-risk", "x"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--max-per-currency", "0"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--confirm-window", "0"})), std::invalid_argument);
 }
 
 TEST(CliTest, UsageMentionsTheComponentOptions)
@@ -418,35 +344,21 @@ TEST(CliTest, TheComponentControlIsOffByDefault)
 
 TEST(CliTest, ReadsTheComponentControlCount)
 {
-    const CliOptions o = parse(with({"--mode", "nnfx", "--confirm", "rsi", "--component-control", "100"}));
-
-    EXPECT_EQ(o.componentControl, 100);
-}
-
-TEST(CliTest, TheComponentControlNeedsNnfxModeAndAComponent)
-{
-    EXPECT_THROW(parse(with({"--component-control", "50"})), std::invalid_argument);                      // flip mode
-    EXPECT_THROW(parse(with({"--mode", "nnfx", "--component-control", "50"})), std::invalid_argument);    // nothing to control
-    EXPECT_NO_THROW(parse(with({"--mode", "nnfx", "--filter", "atr_expansion", "--component-control", "50"})));
-    EXPECT_NO_THROW(parse(with({"--mode", "nnfx", "--exit-indicator", "rsi", "--component-control", "50"})));
-}
-
-TEST(CliTest, TheComponentControlCannotBeCombinedWithTheScreen)
-{
-    EXPECT_THROW(parse({"--screen", "--insample", "a", "--outsample", "b", "--confirm", "rsi", "--component-control", "50"}),
-                 std::invalid_argument);
+    EXPECT_EQ(parse(with({"--component-control", "100"})).componentControl, 100);
 }
 
 TEST(CliTest, TheComponentControlCountMustBeAWholeNumber)
 {
-    EXPECT_THROW(parse(with({"--mode", "nnfx", "--confirm", "rsi", "--component-control", "-1"})), std::invalid_argument);
-    EXPECT_THROW(parse(with({"--mode", "nnfx", "--confirm", "rsi", "--component-control", "x"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--component-control", "-1"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--component-control", "x"})), std::invalid_argument);
 }
 
 TEST(CliTest, UsageMentionsTheComponentControl)
 {
     EXPECT_NE(usage().find("--component-control"), std::string::npos);
 }
+
+// ---------- the log ----------
 
 TEST(CliTest, TheLogIsOffByDefault)
 {
@@ -457,7 +369,7 @@ TEST(CliTest, TheLogIsOffByDefault)
 
 TEST(CliTest, ReadsTheLogFolderAndNote)
 {
-    const CliOptions o = parse(with({"--screen", "--outsample", "data/out", "--log-dir", "results", "--note", "first try"}));
+    const CliOptions o = parse(with({"--entry-study", "100", "--log-dir", "results", "--note", "first try"}));
     EXPECT_EQ(o.logDir, "results");
     EXPECT_EQ(o.note, "first try");
 }
@@ -465,15 +377,18 @@ TEST(CliTest, ReadsTheLogFolderAndNote)
 TEST(CliTest, TheLogFolderNeedsATestThatIsLogged)
 {
     EXPECT_THROW(parse(with({"--log-dir", "results"})), std::invalid_argument);
-    EXPECT_NO_THROW(parse(with({"--mode", "nnfx", "--no-cross-exit", "--control", "50", "--log-dir", "results"})));
-    EXPECT_NO_THROW(parse(with({"--mode", "nnfx", "--confirm", "rsi", "--component-control", "50", "--log-dir", "results"})));
-    EXPECT_NO_THROW(parse(with({"--screen", "--outsample", "data/out", "--log-dir", "results"})));
+    EXPECT_NO_THROW(parse(with({"--no-cross-exit", "--control", "50", "--log-dir", "results"})));
+    EXPECT_NO_THROW(parse(with({"--component-control", "50", "--log-dir", "results"})));
+    EXPECT_NO_THROW(parse(with({"--entry-study", "50", "--log-dir", "results"})));
+    EXPECT_NO_THROW(parse(with({"--entry-control", "50", "--log-dir", "results"})));
 }
 
 TEST(CliTest, TheNoteNeedsTheLogFolder)
 {
-    EXPECT_THROW(parse(with({"--screen", "--outsample", "data/out", "--note", "why"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--note", "why"})), std::invalid_argument);
 }
+
+// ---------- entry study and entry control ----------
 
 TEST(CliTest, TheEntryStudyIsOffByDefault)
 {
@@ -482,29 +397,13 @@ TEST(CliTest, TheEntryStudyIsOffByDefault)
 
 TEST(CliTest, ReadsTheEntryStudyRunCount)
 {
-    EXPECT_EQ(parse(with({"--mode", "nnfx", "--entry-study", "300"})).entryStudy, 300);
-}
-
-TEST(CliTest, TheEntryStudyNeedsNnfxMode)
-{
-    EXPECT_THROW(parse(with({"--entry-study", "100"})), std::invalid_argument);
-    EXPECT_THROW(parse(with({"--mode", "flip", "--entry-study", "100"})), std::invalid_argument);
-}
-
-TEST(CliTest, TheEntryStudyCannotBeCombinedWithTheScreen)
-{
-    EXPECT_THROW(parse(with({"--screen", "--outsample", "data/out", "--entry-study", "100"})), std::invalid_argument);
+    EXPECT_EQ(parse(with({"--entry-study", "300"})).entryStudy, 300);
 }
 
 TEST(CliTest, TheEntryStudyCountMustBeAWholeNumber)
 {
-    EXPECT_THROW(parse(with({"--mode", "nnfx", "--entry-study", "many"})), std::invalid_argument);
-    EXPECT_THROW(parse(with({"--mode", "nnfx", "--entry-study"})), std::invalid_argument);
-}
-
-TEST(CliTest, TheEntryStudyCanBeLogged)
-{
-    EXPECT_NO_THROW(parse(with({"--mode", "nnfx", "--entry-study", "100", "--log-dir", "results"})));
+    EXPECT_THROW(parse(with({"--entry-study", "many"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--entry-study"})), std::invalid_argument);
 }
 
 TEST(CliTest, TheEntryControlIsOffByDefault)
@@ -514,34 +413,40 @@ TEST(CliTest, TheEntryControlIsOffByDefault)
 
 TEST(CliTest, ReadsTheEntryControlCount)
 {
-    EXPECT_EQ(parse(with({"--mode", "nnfx", "--confirm", "rsi", "--entry-control", "200"})).entryControl, 200);
+    EXPECT_EQ(parse(with({"--entry-control", "200"})).entryControl, 200);
 }
 
-TEST(CliTest, TheEntryControlNeedsNnfxModeAndAConfirmationOrAFilter)
+TEST(CliTest, TheEntryControlNeedsAConfirmationOrAFilter)
 {
-    EXPECT_THROW(parse(with({"--confirm", "rsi", "--entry-control", "100"})), std::invalid_argument);                 // flip mode
-    EXPECT_THROW(parse(with({"--mode", "nnfx", "--entry-control", "100"})), std::invalid_argument);                  // nothing to control
-    EXPECT_THROW(parse(with({"--mode", "nnfx", "--exit-indicator", "rsi", "--entry-control", "100"})), std::invalid_argument);   // an exit is not an entry
-    EXPECT_NO_THROW(parse(with({"--mode", "nnfx", "--filter", "atr_expansion", "--entry-control", "100"})));
-}
-
-TEST(CliTest, TheEntryControlCannotBeCombinedWithTheScreen)
-{
-    EXPECT_THROW(parse(with({"--screen", "--outsample", "data/out", "--confirm", "rsi", "--entry-control", "100"})),
-                 std::invalid_argument);
+    EXPECT_THROW(parse(bareWith({"--exit-indicator", "rsi", "--entry-control", "100"})), std::invalid_argument);   // an exit is not an entry
+    EXPECT_NO_THROW(parse(bareWith({"--filter", "atr_expansion", "--entry-control", "100"})));
+    EXPECT_NO_THROW(parse(bareWith({"--confirm", "rsi", "--entry-control", "100"})));
 }
 
 TEST(CliTest, TheEntryControlCountMustBeAWholeNumber)
 {
-    EXPECT_THROW(parse(with({"--mode", "nnfx", "--confirm", "rsi", "--entry-control", "lots"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--entry-control", "lots"})), std::invalid_argument);
 }
 
-TEST(CliTest, TheEntryControlCanBeLogged)
+// ---------- --params ----------
+
+TEST(CliTest, TheParametersAreKeptAsTextForTheBaselineToCheck)
 {
-    EXPECT_NO_THROW(parse(with({"--mode", "nnfx", "--confirm", "rsi", "--entry-control", "100", "--log-dir", "results"})));
+    EXPECT_EQ(parse(with({})).params, "period=26");
+    EXPECT_EQ(parse({"--insample", "a", "--baseline", "kijun", "--params", "x=1, y=2", "--confirm", "rsi"}).params, "x=1, y=2");
 }
 
 // ---------- --signal: the entry study of a signal that is not a baseline ----------
+
+namespace
+{
+std::vector<std::string> signalRun(std::vector<std::string> extra = {})
+{
+    std::vector<std::string> args = {"--insample", "data/in", "--entry-study", "100"};
+    args.insert(args.end(), extra.begin(), extra.end());
+    return args;
+}
+}
 
 TEST(CliTest, TheSignalIsOffByDefault)
 {
@@ -552,10 +457,10 @@ TEST(CliTest, TheSignalIsOffByDefault)
 
 TEST(CliTest, ReadsTheSignalKindAndLookback)
 {
-    CliOptions o = parse(with({"--signal", "breakout:20", "--entry-study", "500"}));
+    CliOptions o = parse(signalRun({"--signal", "breakout:20"}));
     EXPECT_EQ(o.signalKind, "breakout");
     EXPECT_EQ(o.signalLookback, 20);
-    o = parse(with({"--signal", "momentum:60", "--entry-study", "500"}));
+    o = parse(signalRun({"--signal", "momentum:60"}));
     EXPECT_EQ(o.signalKind, "momentum");
     EXPECT_EQ(o.signalLookback, 60);
 }
@@ -563,30 +468,159 @@ TEST(CliTest, ReadsTheSignalKindAndLookback)
 TEST(CliTest, ABadSignalIsRefused)
 {
     for (const char* bad : {"cross:20", "trend:20", "breakout", "breakout:", ":20", "breakout:x", "breakout:0", "breakout:-5", "breakout:2.5"})
-        EXPECT_THROW(parse(with({"--signal", bad, "--entry-study", "100"})), std::invalid_argument) << bad;
+        EXPECT_THROW(parse(signalRun({"--signal", bad})), std::invalid_argument) << bad;
 }
 
 TEST(CliTest, TheSignalNeedsTheEntryStudy)
 {
-    EXPECT_THROW(parse(with({"--signal", "breakout:20"})), std::invalid_argument);
+    EXPECT_THROW(parse({"--insample", "data/in", "--signal", "breakout:20"}), std::invalid_argument);
 }
 
-TEST(CliTest, TheSignalHasNoBaselineModeOrOtherControls)
+TEST(CliTest, TheSignalNeedsNoBaselineOrComponent)
+{
+    EXPECT_NO_THROW(parse(signalRun({"--signal", "breakout:20"})));
+}
+
+TEST(CliTest, TheSignalHasNoBaselineParametersOrOtherControls)
 {
     for (const std::vector<std::string>& extra : std::vector<std::vector<std::string>>{
-             {"--baseline", "sma"}, {"--mode", "nnfx"}, {"--control", "10", "--no-cross-exit"}, {"--component-control", "10", "--confirm", "rsi"},
-             {"--entry-control", "10", "--confirm", "rsi"}})
+             {"--baseline", "kijun"}, {"--params", "period=26"}, {"--control", "10", "--no-cross-exit"},
+             {"--component-control", "10", "--confirm", "rsi"}, {"--entry-control", "10", "--confirm", "rsi"}})
     {
-        std::vector<std::string> args = {"--signal", "breakout:20", "--entry-study", "100"};
+        std::vector<std::string> args = {"--signal", "breakout:20"};
         args.insert(args.end(), extra.begin(), extra.end());
-        EXPECT_THROW(parse(with(args)), std::invalid_argument) << extra.front();
+        EXPECT_THROW(parse(signalRun(args)), std::invalid_argument) << extra.front();
     }
-    EXPECT_THROW(parse(with({"--screen", "--outsample", "data/out", "--signal", "breakout:20", "--entry-study", "100"})),
-                 std::invalid_argument);
 }
 
 TEST(CliTest, TheSignalStudyAcceptsComponentsAnOutsampleAndALog)
 {
-    EXPECT_NO_THROW(parse(with({"--signal", "momentum:60", "--entry-study", "100", "--confirm", "rsi", "--outsample", "data/out",
-                                "--log-dir", "results"})));
+    EXPECT_NO_THROW(parse(signalRun({"--signal", "momentum:60", "--confirm", "rsi", "--outsample", "data/out",
+                                     "--log-dir", "results"})));
+}
+
+// ---------- --grid: every baseline x C1 pair in one batch ----------
+
+namespace
+{
+// a grid run needs the plan file, both selection folders, a log folder and a note with the pass rule
+std::vector<std::string> gridRun(std::vector<std::string> extra = {})
+{
+    std::vector<std::string> args = {"--insample", "data/in", "--outsample", "data/out", "--grid", "plan.txt",
+                                     "--log-dir", "results", "--note", "rule: ..."};
+    args.insert(args.end(), extra.begin(), extra.end());
+    return args;
+}
+}
+
+TEST(CliTest, TheGridIsOffByDefault)
+{
+    const CliOptions o = parse(base());
+    EXPECT_TRUE(o.gridFile.empty());
+    EXPECT_TRUE(o.holdoutDir.empty());
+    EXPECT_TRUE(o.ledgerFile.empty());
+    EXPECT_EQ(o.priorTries, 0);
+    EXPECT_DOUBLE_EQ(o.minBeats, 0.9);
+    EXPECT_DOUBLE_EQ(o.minExpectancy, 0.03);
+}
+
+TEST(CliTest, ReadsTheGridOptions)
+{
+    const CliOptions o = parse(gridRun({"--holdout", "data/old", "--prior-tries", "40", "--min-beats", "0.95",
+                                        "--min-expectancy", "0.05", "--ledger", "ledger.md", "--control", "100"}));
+    EXPECT_EQ(o.gridFile, "plan.txt");
+    EXPECT_EQ(o.holdoutDir, "data/old");
+    EXPECT_EQ(o.priorTries, 40);
+    EXPECT_DOUBLE_EQ(o.minBeats, 0.95);
+    EXPECT_DOUBLE_EQ(o.minExpectancy, 0.05);
+    EXPECT_EQ(o.ledgerFile, "ledger.md");
+    EXPECT_EQ(o.control, 100);
+}
+
+TEST(CliTest, TheGridNeedsNoBaselineParametersOrComponents)
+{
+    EXPECT_NO_THROW(parse(gridRun()));
+}
+
+TEST(CliTest, TheGridNeedsBothSelectionFoldersALogFolderAndANote)
+{
+    EXPECT_THROW(parse({"--insample", "a", "--grid", "plan.txt", "--log-dir", "r", "--note", "n"}), std::invalid_argument);     // no outsample
+    EXPECT_THROW(parse({"--insample", "a", "--outsample", "b", "--grid", "plan.txt", "--note", "n"}), std::invalid_argument);   // no log folder
+    EXPECT_THROW(parse({"--insample", "a", "--outsample", "b", "--grid", "plan.txt", "--log-dir", "r"}), std::invalid_argument); // no note
+}
+
+TEST(CliTest, TheGridCannotBeCombinedWithASystemOrOtherTests)
+{
+    for (const std::vector<std::string>& extra : std::vector<std::vector<std::string>>{
+             {"--baseline", "kijun"}, {"--params", "period=26"}, {"--confirm", "rsi"}, {"--exit-indicator", "rsi"},
+             {"--filter", "atr_expansion"}, {"--signal", "breakout:20"}, {"--entry-study", "100"},
+             {"--entry-control", "100", "--confirm", "rsi"}, {"--component-control", "100", "--confirm", "rsi"}})
+        EXPECT_THROW(parse(gridRun(extra)), std::invalid_argument) << extra.front();
+}
+
+TEST(CliTest, TheGridAcceptsTheSharedNnfxSwitches)
+{
+    EXPECT_NO_THROW(parse(gridRun({"--one-candle", "--continuation", "--max-per-currency", "2", "--max-open-risk", "0.06",
+                                   "--confirm-window", "5", "--no-cross-exit", "--costs", "c.csv", "--spread-multiplier", "2"})));
+}
+
+TEST(CliTest, TheGridOnlyOptionsNeedTheGrid)
+{
+    for (const std::vector<std::string>& extra : std::vector<std::vector<std::string>>{
+             {"--holdout", "h"}, {"--prior-tries", "3"}, {"--min-beats", "0.9"}, {"--min-expectancy", "0.03"}, {"--ledger", "l.md"}})
+        EXPECT_THROW(parse(with(extra)), std::invalid_argument) << extra.front();
+}
+
+TEST(CliTest, TheGridThresholdsAreChecked)
+{
+    EXPECT_THROW(parse(gridRun({"--min-beats", "1.5"})), std::invalid_argument);
+    EXPECT_THROW(parse(gridRun({"--min-beats", "-0.1"})), std::invalid_argument);
+    EXPECT_THROW(parse(gridRun({"--min-beats", "x"})), std::invalid_argument);
+    EXPECT_THROW(parse(gridRun({"--min-expectancy", "x"})), std::invalid_argument);
+    EXPECT_THROW(parse(gridRun({"--prior-tries", "-1"})), std::invalid_argument);
+    EXPECT_THROW(parse(gridRun({"--prior-tries", "1.5"})), std::invalid_argument);
+    EXPECT_NO_THROW(parse(gridRun({"--prior-tries", "0"})));
+}
+
+TEST(CliTest, UsageMentionsTheGridOptions)
+{
+    for (const char* flag : {"--grid", "--holdout", "--prior-tries", "--min-beats", "--min-expectancy", "--ledger"})
+        EXPECT_NE(usage().find(flag), std::string::npos) << flag;
+}
+
+// ---------- --rates and --swap-markup: swap (financing) ----------
+
+TEST(CliTest, SwapIsOffByDefault)
+{
+    const CliOptions o = parse(base());
+    EXPECT_TRUE(o.ratesFile.empty());
+    EXPECT_DOUBLE_EQ(o.swapMarkup, 0.0);
+}
+
+TEST(CliTest, ReadsTheRatesFileAndTheMarkup)
+{
+    const CliOptions o = parse(with({"--rates", "../data/rates.csv", "--swap-markup", "0.5"}));
+    EXPECT_EQ(o.ratesFile, "../data/rates.csv");
+    EXPECT_DOUBLE_EQ(o.swapMarkup, 0.5);
+}
+
+TEST(CliTest, TheMarkupNeedsTheRatesFileAndCannotBeNegative)
+{
+    EXPECT_THROW(parse(with({"--swap-markup", "0.5"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--rates", "r.csv", "--swap-markup", "-0.1"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--rates", "r.csv", "--swap-markup", "x"})), std::invalid_argument);
+    EXPECT_NO_THROW(parse(with({"--rates", "r.csv", "--swap-markup", "0"})));
+}
+
+TEST(CliTest, SwapWorksWithSystemsSignalsAndTheGrid)
+{
+    EXPECT_NO_THROW(parse(with({"--rates", "r.csv"})));
+    EXPECT_NO_THROW(parse(gridRun({"--rates", "r.csv", "--swap-markup", "1"})));
+    EXPECT_NO_THROW(parse({"--insample", "a", "--signal", "breakout:20", "--entry-study", "100", "--rates", "r.csv"}));
+}
+
+TEST(CliTest, UsageMentionsTheSwapOptions)
+{
+    for (const char* flag : {"--rates", "--swap-markup"})
+        EXPECT_NE(usage().find(flag), std::string::npos) << flag;
 }

@@ -89,9 +89,9 @@ Params level100()
     return p;
 }
 
-GridOptions grid(int threads = 1)
+RunOptions grid(int threads = 1)
 {
-    GridOptions g;
+    RunOptions g;
     g.threads = threads;
     return g;
 }
@@ -196,7 +196,7 @@ TEST(ControlTest, TheSameCallTwiceGivesTheSameResult)
 TEST(ControlTest, CostsApplyToBothArms)
 {
     const AlignedData d = dataOf(trending(30));
-    GridOptions costly = grid();
+    RunOptions costly = grid();
     costly.costs.defaultPips = 1000.0;                // 0.1 price units
 
     const ControlResult free = runDirectionControl(d, level100(), maker, exitsOnly(), 5, grid());
@@ -233,4 +233,36 @@ TEST(FormatControlTest, ShowsTheBaselineTheRandomRunsAndTheRank)
     EXPECT_NE(text.find("expectancy"), std::string::npos);
     EXPECT_NE(text.find("total R"), std::string::npos);
     EXPECT_NE(text.find("%"), std::string::npos);
+}
+
+// ---------- swap in the arms ----------
+
+TEST(ControlSwapTest, EveryArmPaysTheSwapOfTheOptions)
+{
+    // days one apart and a pair name, so the rate difference applies; a huge difference moves every arm's R
+    AlignedData d = dataOf(trending(30));
+    d.symbols = {"EURUSD"};
+    for (std::size_t i = 0; i < d.snapshots.size(); ++i)
+    {
+        const std::int64_t t = static_cast<std::int64_t>(i) * kTimestampUnitsPerDay;
+        d.snapshots[i].timestamp = t;
+        d.snapshots[i].bars[0]->timestamp = t;
+    }
+    NnfxOptions nnfx;
+    nnfx.atrPeriod = 3;
+    nnfx.maxDistanceAtr = 2.0;
+    nnfx.exitOnCross = false;
+    RunOptions plain;
+    plain.threads = 1;
+    RunOptions swapped = plain;
+    swapped.swap.rates["EUR"] = {{0, 40.0}};
+    swapped.swap.rates["USD"] = {{0, 0.0}};
+
+    const ControlResult a = runDirectionControl(d, Params{{"level", 100}}, maker, nnfx, 5, plain);
+    const ControlResult b = runDirectionControl(d, Params{{"level", 100}}, maker, nnfx, 5, swapped);
+
+    EXPECT_NE(a.baseline.expectancyR, b.baseline.expectancyR);
+    ASSERT_EQ(a.random.size(), b.random.size());
+    for (std::size_t i = 0; i < a.random.size(); ++i)
+        EXPECT_NE(a.random[i].expectancyR, b.random[i].expectancyR) << i;
 }

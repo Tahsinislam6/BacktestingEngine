@@ -22,6 +22,10 @@ class Portfolio
         // Returns false (and does nothing) if there is no open trade with that id.
         bool moveStop(int id, double price, ExitReason why);
 
+        // Adds one night's financing (positive = earned) to an open trade. Returns false (and does nothing) if there is no open
+        // trade with that id. A trade's swap is part of its result: the equity includes it, and so does its pnl on closing.
+        bool accrueSwap(int id, double amount);
+
         double equity(double markPrice) const;
 
         // marks[asset] = price used to value open trades on that asset.

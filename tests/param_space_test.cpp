@@ -179,3 +179,85 @@ TEST(ExpandGridTest, RejectsANameUsedTwice)
 {
     EXPECT_THROW(expandGrid({{"x", 1, 3, 1}, {"x", 5, 6, 1}}), std::invalid_argument);
 }
+
+// ---------- parseParams: the parameters given on the command line ----------
+// "period=26,mult=2.5" -> one Params. Every parameter of the baseline must be named once, no others, each inside its range.
+
+TEST(ParseParamsTest, ReadsNamesAndValues)
+{
+    const Params p = parseParams("period=26,mult=2.5", {{"period", 5, 200, 1}, {"mult", 1, 5, 0.5}});
+
+    EXPECT_DOUBLE_EQ(p.get("period"), 26.0);
+    EXPECT_DOUBLE_EQ(p.get("mult"), 2.5);
+}
+
+TEST(ParseParamsTest, ToleratesSpacesAndTheOrderOfNames)
+{
+    const Params p = parseParams(" mult = 2.5 , period=26 ", {{"period", 5, 200, 1}, {"mult", 1, 5, 0.5}});
+
+    EXPECT_DOUBLE_EQ(p.get("period"), 26.0);
+    EXPECT_DOUBLE_EQ(p.get("mult"), 2.5);
+}
+
+TEST(ParseParamsTest, TheEndsOfTheRangeAreAllowed)
+{
+    EXPECT_NO_THROW(parseParams("period=5", {{"period", 5, 200, 1}}));
+    EXPECT_NO_THROW(parseParams("period=200", {{"period", 5, 200, 1}}));
+}
+
+TEST(ParseParamsTest, ARangeThatDoesNotLandOnTheStepStillAllowsItsEnd)
+{
+    EXPECT_NO_THROW(parseParams("x=2.9", {{"x", 1, 2.9, 0.5}}));
+}
+
+TEST(ParseParamsTest, ABaselineWithoutParametersTakesNoText)
+{
+    EXPECT_TRUE(parseParams("", {}).values().empty());
+    EXPECT_THROW(parseParams("period=3", {}), std::invalid_argument);
+}
+
+TEST(ParseParamsTest, EveryParameterMustBeGiven)
+{
+    try
+    {
+        parseParams("period=26", {{"period", 5, 200, 1}, {"mult", 1, 5, 0.5}});
+        FAIL() << "expected an exception";
+    }
+    catch (const std::invalid_argument& e)
+    {
+        EXPECT_NE(std::string(e.what()).find("mult"), std::string::npos);      // names what is missing
+    }
+    EXPECT_THROW(parseParams("", {{"period", 5, 200, 1}}), std::invalid_argument);
+}
+
+TEST(ParseParamsTest, AnUnknownNameIsRejectedAndNamed)
+{
+    try
+    {
+        parseParams("period=26,speed=2", {{"period", 5, 200, 1}});
+        FAIL() << "expected an exception";
+    }
+    catch (const std::invalid_argument& e)
+    {
+        EXPECT_NE(std::string(e.what()).find("speed"), std::string::npos);
+    }
+}
+
+TEST(ParseParamsTest, ANameGivenTwiceIsRejected)
+{
+    EXPECT_THROW(parseParams("period=26,period=27", {{"period", 5, 200, 1}}), std::invalid_argument);
+}
+
+TEST(ParseParamsTest, AValueOutsideTheRangeIsRejected)
+{
+    EXPECT_THROW(parseParams("period=4", {{"period", 5, 200, 1}}), std::invalid_argument);
+    EXPECT_THROW(parseParams("period=201", {{"period", 5, 200, 1}}), std::invalid_argument);
+}
+
+TEST(ParseParamsTest, MalformedTextIsRejected)
+{
+    const std::vector<ParamRange> r{{"period", 5, 200, 1}};
+    for (const char* bad : {"period", "period=", "=26", "period=abc", "period=26x", "period=26,", ",period=26",
+                            "period==26", "period=nan", "period=inf"})
+        EXPECT_THROW(parseParams(bad, r), std::invalid_argument) << bad;
+}

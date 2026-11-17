@@ -58,8 +58,8 @@ std::string logTimestamp(std::time_t when)
 
 std::string setupText(const CliOptions& cli)
 {
-    std::string s = cli.mode == Mode::Nnfx || cli.screen ? "nnfx" : "flip";
-    if (cli.noCrossExit || cli.screen)
+    std::string s = "nnfx";
+    if (cli.noCrossExit)
         s += " no-cross-exit";
     if (!cli.confirm.empty())
         s += " confirm=" + cli.confirm + " confirm-window=" + std::to_string(cli.confirmWindow);
@@ -75,18 +75,25 @@ std::string setupText(const CliOptions& cli)
         s += " max-open-risk=" + num(*cli.maxOpenRisk);
     if (cli.maxPerCurrency)
         s += " max-per-currency=" + std::to_string(*cli.maxPerCurrency);
+    if (!cli.gridFile.empty())
+    {
+        s += " grid=" + cli.gridFile;
+        if (!cli.holdoutDir.empty())
+            s += " holdout=" + cli.holdoutDir;
+        s += " prior-tries=" + std::to_string(cli.priorTries) + " min-beats=" + num(cli.minBeats) +
+             " min-expectancy=" + num(cli.minExpectancy);
+    }
     // Breakeven and trailing exits are real stop orders (they fill at the stop, not at a later close). Log rows from
     // before that change have no such marker.
-    if (cli.mode == Mode::Nnfx || cli.screen)
-        s += " stops=orders";
-    return s + " objective=" + objectiveName(cli.objective) + " min-trades=" + std::to_string(cli.minTrades);
+    return s + " stops=orders";
 }
 
 std::string costsText(const CliOptions& cli)
 {
+    const std::string swap = cli.ratesFile.empty() ? "no swap" : "swap " + cli.ratesFile + " markup " + num(cli.swapMarkup);
     if (cli.noCosts)
-        return "none";
-    return (cli.costsFile.empty() ? "typical" : cli.costsFile) + " x" + num(cli.spreadMultiplier);
+        return "no spread, " + swap;
+    return (cli.costsFile.empty() ? "typical" : cli.costsFile) + " x" + num(cli.spreadMultiplier) + ", " + swap;
 }
 
 LogContext makeLogContext(const CliOptions& cli, std::time_t now)
@@ -136,19 +143,6 @@ void appendLog(const std::string& dir, const std::string& file, const std::strin
     out.close();
     if (!out)
         throw std::runtime_error("Failed while writing " + path.string());
-}
-
-std::string screenLogHeader()
-{
-    return std::string(contextColumns()) + ",random_runs," + screenCsvHeader();
-}
-
-std::vector<std::string> screenLogRows(const LogContext& context, const std::vector<ScreenRow>& rows, int controlRuns)
-{
-    std::vector<std::string> out;
-    for (const ScreenRow& r : rows)
-        out.push_back(contextFields(context) + "," + std::to_string(controlRuns) + "," + screenCsvRow(r));
-    return out;
 }
 
 std::string directionLogHeader()
@@ -258,4 +252,61 @@ std::string entryControlLogRow(const LogContext& context, const std::string& bas
     row += "," + num(result.real.balance) + "," + num(result.without.balance) + "," +
            num(finiteMean(column([](const EntryArm& a) { return a.balance; }))) + "," + num(result.balanceBeats);
     return row + "," + csvField(result.behaviour) + "\n";
+}
+
+std::string gridLogHeader()
+{
+    return std::string(contextColumns()) + ",random_runs," + gridCsvHeader();
+}
+
+std::vector<std::string> gridLogRows(const LogContext& context, const std::vector<GridRow>& rows, int controlRuns)
+{
+    std::vector<std::string> out;
+    for (const GridRow& r : rows)
+        out.push_back(contextFields(context) + "," + std::to_string(controlRuns) + "," + gridCsvRow(r));
+    return out;
+}
+
+namespace
+{
+    std::string ledgerCell(std::string text)
+    {
+        for (char& c : text)
+            if (c == '|')
+                c = '/';
+            else if (c == '\n' || c == '\r')
+                c = ' ';
+        return text;
+    }
+}
+
+std::string ledgerRow(const LogContext& c, const std::string& what, const std::string& result)
+{
+    return "| " + ledgerCell(c.timestamp) + " | " + ledgerCell(what) + " | " +
+           ledgerCell("in: " + c.inSample + ", out: " + c.outSample) + " | " + ledgerCell(c.note) + " | " +
+           ledgerCell(result) + " |\n";
+}
+
+void appendLedger(const std::string& path, const std::string& row)
+{
+    namespace fs = std::filesystem;
+    const fs::path file(path);
+    if (file.has_parent_path())
+    {
+        std::error_code error;
+        fs::create_directories(file.parent_path(), error);
+        if (error)
+            throw std::runtime_error("Cannot create " + file.parent_path().string() + ": " + error.message());
+    }
+    const bool existed = fs::exists(file);
+    std::ofstream out(file, std::ios::app);
+    if (!out)
+        throw std::runtime_error("Cannot write " + path);
+    if (!existed)
+        out << "# Tries ledger\n\nOne row per test run. M = the number of pairs tried.\n\n"
+               "| when | what | data | pass rule (written before the run) | result |\n|---|---|---|---|---|\n";
+    out << row;
+    out.close();
+    if (!out)
+        throw std::runtime_error("Failed while writing " + path);
 }

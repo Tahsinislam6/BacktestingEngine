@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -8,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "grid.hpp"
 #include "result_log.hpp"
 
 // The results log appends one csv row per result, one file per type of test. These tests read the files back
@@ -195,15 +197,6 @@ TEST(ResultLog, AnEmptyExistingFileGetsTheHeader)
 
 TEST(ResultLog, EveryRowHasAsManyFieldsAsItsHeader)
 {
-    ScreenRow s;
-    s.name = "kijun";
-    s.params = "period=141";
-    s.error = "boom, with a comma";
-    const std::vector<std::string> screen = screenLogRows(context(), {s, s}, 200);
-    ASSERT_EQ(screen.size(), 2u);
-    const std::size_t screenCols = splitCsv(screenLogHeader()).size();
-    for (const std::string& r : screen)
-        EXPECT_EQ(splitCsv(r).size(), screenCols);
     EXPECT_EQ(splitCsv(directionLogRow(context(), "kijun", "period=141", "in-sample", 200, controlResult())).size(),
               splitCsv(directionLogHeader()).size());
     EXPECT_EQ(splitCsv(componentLogRow(context(), "kijun", "period=141", ComponentRole::Confirmation, "rsi",
@@ -234,7 +227,7 @@ std::string field(const std::string& header, const std::string& row, const std::
 TEST(ResultLog, ContextColumnsComeFirstInEveryLog)
 {
     const std::vector<std::string> expected = {"timestamp", "note", "setup", "costs", "insample", "outsample"};
-    for (const std::string& header : {screenLogHeader(), directionLogHeader(), componentLogHeader(), entryStudyLogHeader(), entryControlLogHeader()})
+    for (const std::string& header : {directionLogHeader(), componentLogHeader(), entryStudyLogHeader(), entryControlLogHeader()})
     {
         const auto h = splitCsv(header);
         ASSERT_GE(h.size(), expected.size());
@@ -249,37 +242,6 @@ TEST(ResultLog, ContextColumnsComeFirstInEveryLog)
     EXPECT_EQ(f[3], "typical x1");
     EXPECT_EQ(f[4], "in");
     EXPECT_EQ(f[5], "out");
-}
-
-TEST(ResultLog, ScreenRowsCarryTheScreenNumbers)
-{
-    ScreenRow s;
-    s.name = "kijun";
-    s.params = "period=141";
-    s.inSampleSharpe = 0.36;
-    s.neighbourShare = 0.9;
-    s.timeSplitScore = -0.21;
-    s.oosSharpe = 0.07;
-    s.oosExpectancyR = 0.012;
-    s.oosTrades = 901;
-    s.oosBeatsExpectancy = 0.48;
-    s.oosBeatsSharpe = 0.46;
-    s.inSampleBeatsExpectancy = 0.88;
-    s.candidate = false;
-    const std::string h = screenLogHeader();
-    const std::string r = screenLogRows(context(), {s}, 200).at(0);
-    EXPECT_EQ(field(h, r, "baseline"), "kijun");
-    EXPECT_EQ(field(h, r, "params"), "period=141");
-    EXPECT_EQ(field(h, r, "random_runs"), "200");
-    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "in_sample_sharpe")), 0.36);
-    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "time_split_score")), -0.21);
-    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "oos_sharpe")), 0.07);
-    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "oos_expectancy_r")), 0.012);
-    EXPECT_EQ(field(h, r, "oos_trades"), "901");
-    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "oos_beats_expectancy")), 0.48);
-    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "oos_beats_sharpe")), 0.46);
-    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "in_sample_beats_expectancy")), 0.88);
-    EXPECT_EQ(field(h, r, "candidate"), "no");
 }
 
 TEST(ResultLog, DirectionRowCarriesTheControlNumbers)
@@ -337,7 +299,6 @@ TEST(ResultLog, UndefinedNumbersAreNan)
 TEST(ResultLog, SetupTextNamesWhatWasSwitchedOn)
 {
     CliOptions cli;
-    cli.mode = Mode::Nnfx;
     cli.noCrossExit = true;
     cli.confirm = "rsi";
     cli.filter = "atr_expansion";
@@ -346,22 +307,31 @@ TEST(ResultLog, SetupTextNamesWhatWasSwitchedOn)
     cli.maxPerCurrency = 2;
     const std::string s = setupText(cli);
     for (const char* part : {"nnfx", "no-cross-exit", "confirm=rsi", "filter=atr_expansion", "one-candle",
-                             "max-open-risk=0.06", "max-per-currency=2", "objective=sharpe", "min-trades=30"})
+                             "max-open-risk=0.06", "max-per-currency=2"})
         EXPECT_NE(s.find(part), std::string::npos) << part << " missing from: " << s;
     EXPECT_NE(s.find("stops=orders"), std::string::npos) << s;    // marks rows made after breakeven/trailing became stop orders
     EXPECT_EQ(s.find("exit-indicator"), std::string::npos) << s;  // no exit indicator given
     EXPECT_EQ(s.find("continuation"), std::string::npos) << s;
+    EXPECT_EQ(s.find("objective"), std::string::npos) << s;       // nothing is optimised any more
+    EXPECT_EQ(s.find("min-trades"), std::string::npos) << s;
 }
 
-TEST(ResultLog, CostsTextSaysWhichSpreadsWereUsed)
+TEST(ResultLog, CostsTextSaysWhichSpreadsAndWhichSwapWereUsed)
 {
     CliOptions cli;
-    EXPECT_EQ(costsText(cli), "typical x1");
+    EXPECT_EQ(costsText(cli), "typical x1, no swap");
     cli.costsFile = "costs.csv";
     cli.spreadMultiplier = 2;
-    EXPECT_EQ(costsText(cli), "costs.csv x2");
+    EXPECT_EQ(costsText(cli), "costs.csv x2, no swap");
+    cli.ratesFile = "../data/rates.csv";
+    EXPECT_EQ(costsText(cli), "costs.csv x2, swap ../data/rates.csv markup 0");
+    cli.swapMarkup = 0.5;
+    EXPECT_EQ(costsText(cli), "costs.csv x2, swap ../data/rates.csv markup 0.5");
     cli.noCosts = true;
-    EXPECT_EQ(costsText(cli), "none");
+    EXPECT_EQ(costsText(cli), "no spread, swap ../data/rates.csv markup 0.5");
+    cli.ratesFile.clear();
+    cli.swapMarkup = 0;
+    EXPECT_EQ(costsText(cli), "no spread, no swap");
 }
 
 TEST(ResultLog, ContextTakesTheFoldersAndNoteFromTheCommandLine)
@@ -375,12 +345,6 @@ TEST(ResultLog, ContextTakesTheFoldersAndNoteFromTheCommandLine)
     EXPECT_EQ(c.note, "why");
     EXPECT_EQ(c.inSample, "in");
     EXPECT_EQ(c.outSample, "out");
-}
-
-TEST(ResultLog, AFlipRunHasNoStopsMarker)
-{
-    CliOptions cli;            // flip mode by default
-    EXPECT_EQ(setupText(cli).find("stops=orders"), std::string::npos);
 }
 
 TEST(ResultLog, EntryStudyRowCarriesTheHorizonsTheRaceAndTheExcursions)
@@ -469,4 +433,121 @@ TEST(ResultLog, EntryControlRowCarriesBothArmsTheRandomMeanAndTheRanks)
 TEST(ResultLog, TheEntryControlLogHasItsOwnFile)
 {
     EXPECT_STREQ(kEntryControlLogFile, "entry_control_log.csv");
+}
+
+// ---------- the grid log and the tries ledger ----------
+
+TEST(ResultLog, TheGridLogHasTheContextColumnsThenTheGridColumns)
+{
+    const std::string h = gridLogHeader();
+    EXPECT_EQ(splitCsv(h).front(), "timestamp");
+    for (const char* column : {"note", "setup", "costs", "insample", "outsample", "random_runs", "baseline", "c1",
+                               "oos_expectancy_r", "oos_adjusted_beats", "family_size", "passed_stage_one", "holdout_bar",
+                               "candidate", "error"})
+        EXPECT_NE(h.find(column), std::string::npos) << column;
+    EXPECT_STREQ(kGridLogFile, "grid_log.csv");
+}
+
+TEST(ResultLog, GridRowsCarryTheGridNumbers)
+{
+    GridRow r;
+    r.baseline = "kijun";
+    r.params = "period=26";
+    r.c1 = "aroon";
+    r.inSampleTrades = 900;
+    r.inSampleExpectancyR = 0.011;
+    r.oosTrades = 880;
+    r.oosExpectancyR = 0.045;
+    r.oosBeatsExpectancy = 0.97;
+    r.oosScore = 2.5;
+    r.oosAdjustedBeats = 0.4;
+    r.familySize = 224;
+    r.passedStageOne = true;
+    r.holdoutTrades = 1700;
+    r.holdoutExpectancyR = -0.02;
+    r.holdoutBeatsExpectancy = 0.2;
+    r.holdoutBar = 0.9;
+    r.candidate = false;
+
+    const std::vector<std::string> rows = gridLogRows(context(), {r, r}, 200);
+    ASSERT_EQ(rows.size(), 2u);
+    const std::string h = gridLogHeader();
+    EXPECT_EQ(splitCsv(rows[0]).size(), splitCsv(h).size());
+    EXPECT_EQ(field(h, rows[0], "random_runs"), "200");
+    EXPECT_EQ(field(h, rows[0], "baseline"), "kijun");
+    EXPECT_EQ(field(h, rows[0], "params"), "period=26");
+    EXPECT_EQ(field(h, rows[0], "c1"), "aroon");
+    EXPECT_EQ(field(h, rows[0], "in_sample_trades"), "900");
+    EXPECT_DOUBLE_EQ(std::stod(field(h, rows[0], "in_sample_expectancy_r")), 0.011);
+    EXPECT_EQ(field(h, rows[0], "oos_trades"), "880");
+    EXPECT_DOUBLE_EQ(std::stod(field(h, rows[0], "oos_expectancy_r")), 0.045);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, rows[0], "oos_beats_expectancy")), 0.97);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, rows[0], "oos_score")), 2.5);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, rows[0], "oos_adjusted_beats")), 0.4);
+    EXPECT_EQ(field(h, rows[0], "family_size"), "224");
+    EXPECT_EQ(field(h, rows[0], "passed_stage_one"), "yes");
+    EXPECT_EQ(field(h, rows[0], "holdout_trades"), "1700");
+    EXPECT_DOUBLE_EQ(std::stod(field(h, rows[0], "holdout_expectancy_r")), -0.02);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, rows[0], "holdout_beats_expectancy")), 0.2);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, rows[0], "holdout_bar")), 0.9);
+    EXPECT_EQ(field(h, rows[0], "candidate"), "no");
+}
+
+TEST(ResultLog, TheSetupTextRecordsTheGrid)
+{
+    CliOptions cli;
+    cli.gridFile = "phase1/plan.txt";
+    cli.holdoutDir = "../data/pre2016-all";
+    cli.priorTries = 5;
+    cli.minBeats = 0.95;
+    cli.minExpectancy = 0.04;
+    const std::string s = setupText(cli);
+    for (const char* part : {"grid=phase1/plan.txt", "holdout=../data/pre2016-all", "prior-tries=5", "min-beats=0.95",
+                             "min-expectancy=0.04"})
+        EXPECT_NE(s.find(part), std::string::npos) << part << " missing from: " << s;
+    EXPECT_EQ(setupText(CliOptions{}).find("grid="), std::string::npos);
+}
+
+TEST(ResultLog, ALedgerRowHasTheFiveColumnsAndNoStrayPipes)
+{
+    LogContext c = context();
+    c.note = "rule: expectancy >= 0.03R | beats >= 90%\nsecond line";
+    const std::string row = ledgerRow(c, "grid a|b", "2 finalists");
+    EXPECT_EQ(row.back(), '\n');
+    EXPECT_EQ(std::count(row.begin(), row.end(), '|'), 6);                  // | a | b | c | d | e |
+    EXPECT_EQ(std::count(row.begin(), row.end(), '\n'), 1);
+    EXPECT_NE(row.find(c.timestamp), std::string::npos);
+    EXPECT_NE(row.find("2 finalists"), std::string::npos);
+    EXPECT_NE(row.find("rule: expectancy >= 0.03R"), std::string::npos);
+    EXPECT_NE(row.find(c.inSample), std::string::npos);
+}
+
+TEST(ResultLog, TheLedgerIsCreatedWithItsHeaderAndThenAppendedTo)
+{
+    const std::string dir = freshDir("ledger");
+    const std::string path = dir + "/sub/ledger.md";
+    appendLedger(path, "| 1 |\n");
+    appendLedger(path, "| 2 |\n");
+    const auto l = lines(path);
+    ASSERT_GE(l.size(), 5u);
+    EXPECT_EQ(l[0].rfind("# Tries ledger", 0), 0u);
+    EXPECT_EQ(l[l.size() - 2], "| 1 |");
+    EXPECT_EQ(l[l.size() - 1], "| 2 |");
+    EXPECT_EQ(std::count(l.begin(), l.end(), l[0]), 1);                   // the header is written once
+}
+
+TEST(ResultLog, AnExistingLedgerIsOnlyAppendedTo)
+{
+    const std::string dir = freshDir("ledger2");
+    fs::create_directories(dir);
+    const std::string path = dir + "/ledger.md";
+    {
+        std::ofstream out(path);
+        out << "my own header\n| old |\n";
+    }
+    appendLedger(path, "| new |\n");
+    const auto l = lines(path);
+    ASSERT_EQ(l.size(), 3u);
+    EXPECT_EQ(l[0], "my own header");
+    EXPECT_EQ(l[2], "| new |");
 }

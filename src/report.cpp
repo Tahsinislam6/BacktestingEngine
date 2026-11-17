@@ -1,5 +1,6 @@
 #include "report.hpp"
 
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -61,49 +62,6 @@ std::string paramsText(const Params& params)
     return out;
 }
 
-std::string objectiveName(Objective objective)
-{
-    switch (objective)
-    {
-        case Objective::Sharpe:            return "sharpe";
-        case Objective::Sortino:           return "sortino";
-        case Objective::Calmar:            return "calmar";
-        case Objective::TotalReturn:       return "return";
-        case Objective::CaptureEfficiency: return "capture";
-    }
-    return "?";
-}
-
-std::string rankedCsv(const std::vector<Ranked>& ranked)
-{
-    std::vector<std::string> names;
-    if (!ranked.empty())
-        for (const auto& [name, value] : ranked[0].evaluation.params.values())
-            names.push_back(name);
-
-    std::string out = "rank,score";
-    for (const std::string& n : names)
-        out += "," + n;
-    out += ",trades,total_return,cagr,max_drawdown,sharpe,sortino,calmar,win_rate,profit_factor,"
-           "expectancy,avg_holding_days,capture_efficiency,capture_legs,right_share\n";
-
-    for (std::size_t i = 0; i < ranked.size(); ++i)
-    {
-        const Evaluation& e = ranked[i].evaluation;
-        out += std::to_string(i + 1) + "," + num(ranked[i].score);
-        for (const std::string& n : names)
-            out += "," + (e.params.has(n) ? num(e.params.get(n)) : std::string());
-        out += "," + std::to_string(e.metrics.trades);
-        for (double v : {e.metrics.totalReturn, e.metrics.cagr, e.metrics.maxDrawdown, e.metrics.sharpe,
-                         e.metrics.sortino, e.metrics.calmar, e.metrics.winRate, e.metrics.profitFactor,
-                         e.metrics.expectancy, e.metrics.avgHoldingTime / static_cast<double>(kTimestampUnitsPerDay),
-                         e.capture.efficiency})
-            out += "," + num(v);
-        out += "," + std::to_string(e.capture.legs) + "," + num(e.capture.rightShare) + "\n";
-    }
-    return out;
-}
-
 std::string csvField(const std::string& s)
 {
     if (s.find_first_of(",\"\n") == std::string::npos)
@@ -123,25 +81,6 @@ void writeTextFile(const std::string& path, const std::string& text)
     file.close();
     if (!file)
         throw std::runtime_error("Failed while writing " + path);
-}
-
-std::string rankedTable(const std::vector<Ranked>& ranked, std::size_t top)
-{
-    if (ranked.empty())
-        return "  (no run reached the minimum number of trades)\n";
-
-    std::string out = fmt("  %4s %8s  %-28s %6s %9s %7s %8s %8s\n", "rank", "score", "parameters", "trades",
-                          "return", "sharpe", "max dd", "capture");
-    const std::size_t rows = std::min(top, ranked.size());
-    for (std::size_t i = 0; i < rows; ++i)
-    {
-        const Evaluation& e = ranked[i].evaluation;
-        out += fmt("  %4zu %8s  %-28s %6d %9s %7s %8s %8s\n", i + 1, number(ranked[i].score).c_str(),
-                   paramsText(e.params).c_str(), e.metrics.trades, pct(e.metrics.totalReturn).c_str(),
-                   number(e.metrics.sharpe).c_str(), pct(e.metrics.maxDrawdown).c_str(),
-                   number(e.capture.efficiency).c_str());
-    }
-    return out;
 }
 
 std::vector<AssetReport> perAssetReport(const AlignedData& data, const BacktestResult& result,
@@ -165,7 +104,8 @@ std::vector<AssetReport> perAssetReport(const AlignedData& data, const BacktestR
             if (c.trade.asset != asset)
                 continue;
             ++r.trades;
-            r.pnl += c.pnl;
+            r.pnl += c.pnl;                                   // already includes the trade's swap
+            r.swap += c.trade.swap;
             r.costPaid += spread * c.trade.quantity;
         }
         for (const Trade& t : result.openTrades)
@@ -174,6 +114,8 @@ std::vector<AssetReport> perAssetReport(const AlignedData& data, const BacktestR
                 continue;
             ++r.trades;
             r.costPaid += spread / 2.0 * t.quantity;
+            r.swap += t.swap;
+            r.pnl += t.swap;
             if (!bars.empty())
                 r.pnl += pnlOf(t, bars.back().close);
         }
@@ -188,9 +130,78 @@ std::string assetTable(const std::vector<AssetReport>& assets)
     if (assets.empty())
         return "  (no assets)\n";
 
-    std::string out = fmt("  %-12s %6s %12s %10s %9s %8s\n", "asset", "trades", "profit", "cost", "capture", "legs ok");
+    std::string out = fmt("  %-12s %6s %12s %10s %10s %9s %8s\n", "asset", "trades", "profit", "cost", "swap", "capture", "legs ok");
     for (const AssetReport& a : assets)
-        out += fmt("  %-12s %6d %12s %10s %9s %8s\n", a.symbol.c_str(), a.trades, number(a.pnl).c_str(),
-                   number(a.costPaid).c_str(), number(a.capture.efficiency).c_str(), pct(a.capture.rightShare).c_str());
+        out += fmt("  %-12s %6d %12s %10s %10s %9s %8s\n", a.symbol.c_str(), a.trades, number(a.pnl).c_str(),
+                   number(a.costPaid).c_str(), number(a.swap).c_str(), number(a.capture.efficiency).c_str(),
+                   pct(a.capture.rightShare).c_str());
+    return out;
+}
+
+SystemRun runSystem(const AlignedData& data, const Params& params, const StrategyFactory& factory,
+                    const RunOptions& options)
+{
+    std::unique_ptr<MultiStrategy> strategy = factory(params, data.symbols.size());
+    if (!strategy)
+        throw std::invalid_argument("the strategy factory returned no strategy");
+
+    const std::vector<double> spreads = spreadsFor(options.costs, data.symbols);
+    const BacktestResult result = runMultiBacktest(data, *strategy, options.startingCash, spreads,
+                                                   makeSwapSchedule(options.swap, data.symbols, data));
+    const std::vector<std::vector<Pivot>> pivots = zigzagAll(data, options.zigzagMultiple, options.atrPeriod);
+
+    SystemRun run;
+    run.evaluation.params = params;
+    run.evaluation.metrics = computeMetrics(result, options.startingCash, options.periodsPerYear);
+    run.evaluation.capture = captureEfficiency(data, pivots, result);
+    run.assets = perAssetReport(data, result, pivots, spreads);
+
+    const RReport r = computeRReport(result.closedTrades, static_cast<int>(result.openTrades.size()));
+    if (r.all.trades > 0)
+        run.r = r;
+    return run;
+}
+
+namespace
+{
+    std::string rRow(const char* label, const RStats& s)
+    {
+        return fmt("  %-12s %6d %7s %9s %9s %11s %9s\n", label, s.trades, pct(s.winRate).c_str(),
+                   number(s.avgWinR).c_str(), number(s.avgLossR).c_str(), number(s.expectancyR).c_str(),
+                   number(s.totalR).c_str());
+    }
+
+    std::string exitText(const char* label, const ExitStats& e)
+    {
+        return fmt("%s %d (%s R avg)", label, e.count, e.count > 0 ? number(e.avgR()).c_str() : "-");
+    }
+
+    // 1R = the amount a trade risked to its stop.
+    std::string rTable(const RReport& r)
+    {
+        std::string out = "  R-MULTIPLES (1R = the amount risked to the stop):\n";
+        out += fmt("  %-12s %6s %7s %9s %9s %11s %9s\n", "", "trades", "win", "avg win", "avg loss", "expectancy", "total R");
+        out += rRow("all", r.all) + rRow("target half", r.targetHalf) + rRow("runner", r.runner);
+        out += "  exits: " + exitText("stop", r.all.stop) + " | " + exitText("target", r.all.target) + " | " +
+               exitText("breakeven", r.all.breakeven) + " | " + exitText("trailing", r.all.trailing) + " | " +
+               exitText("indicator", r.all.indicator) + " | " + exitText("cross-back", r.all.signal) + "\n";
+        out += fmt("  %d trades were still open when the data ended and are not counted above.\n", r.openAtEnd);
+        return out;
+    }
+}
+
+std::string formatSystemRun(const std::string& label, const SystemRun& run)
+{
+    std::string upper = label;
+    for (char& c : upper)
+        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+
+    const Metrics& m = run.evaluation.metrics;
+    std::string out = upper + " (" + paramsText(run.evaluation.params) + "):\n";
+    out += fmt("  return %s, sharpe %s, max drawdown %s, %d trades, capture %s\n", pct(m.totalReturn).c_str(),
+               number(m.sharpe).c_str(), pct(m.maxDrawdown).c_str(), m.trades, number(run.evaluation.capture.efficiency).c_str());
+    out += assetTable(run.assets);
+    if (run.r)
+        out += rTable(*run.r);
     return out;
 }

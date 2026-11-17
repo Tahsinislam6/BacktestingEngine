@@ -1061,3 +1061,235 @@ TEST(SetSymbolsTest, TheStrategyIsToldTheAssetNamesBeforeTheFirstSnapshot)
     EXPECT_EQ(r.callsBefore, 0);
     EXPECT_EQ(r.calls, 2);
 }
+
+// ---------- swap (financing) ----------
+// A schedule gives, for every asset and snapshot, the annual rate difference (base - quote) in percent, and a markup.
+// For every snapshot after the first, each trade that was open at the end of the previous one pays or earns the nights in
+// between: quantity * the PREVIOUS close * (+-difference - markup) / 100 / 365, per calendar night (the gap between the
+// two snapshots, rounded to whole days: a weekend is 3 nights), using the difference in force at the previous snapshot.
+// Swap is part of the trade's result (pnl, equity, R). No schedule, or an inactive one, changes nothing.
+
+namespace
+{
+constexpr std::int64_t kSwapDay = kTimestampUnitsPerDay;
+
+AlignedData swapData(const std::vector<int>& days, const std::vector<double>& closes, const std::string& symbol = "EURUSD")
+{
+    AlignedData d;
+    d.symbols = {symbol};
+    for (std::size_t i = 0; i < days.size(); ++i)
+    {
+        const std::int64_t t = static_cast<std::int64_t>(days[i]) * kSwapDay;
+        d.snapshots.push_back(snap(t, {flatBar(t, closes[i])}));
+    }
+    return d;
+}
+
+SwapSchedule scheduleOf(std::vector<double> differences, double markup = 0.0)
+{
+    SwapSchedule s;
+    s.differentialPct = {std::move(differences)};
+    s.markupPct = markup;
+    return s;
+}
+
+double night(double quantity, double price, double signedDifference) { return quantity * price * signedDifference / 100.0 / 365.0; }
+}
+
+TEST(SwapBacktestTest, ALongHeldForThreeNightsEarnsThreeNights)
+{
+    const AlignedData d = swapData({0, 1, 2, 3}, {1.2, 1.2, 1.2, 1.2});
+    ScriptedMulti strategy({{openOrder(Direction::Long, 1000)}, {}, {}, {closeOrder(1)}});
+
+    const BacktestResult r = runMultiBacktest(d, strategy, kCash, {}, scheduleOf({2, 2, 2, 2}));
+
+    ASSERT_EQ(r.closedTrades.size(), 1u);
+    EXPECT_NEAR(r.closedTrades[0].trade.swap, 3 * night(1000, 1.2, 2.0), 1e-12);
+    EXPECT_NEAR(r.closedTrades[0].pnl, 3 * night(1000, 1.2, 2.0), 1e-12);          // the price did not move
+    EXPECT_NEAR(r.finalEquity, kCash + 3 * night(1000, 1.2, 2.0), 1e-9);
+}
+
+TEST(SwapBacktestTest, TheEquityCurveGrowsOneNightAtATime)
+{
+    const AlignedData d = swapData({0, 1, 2, 3}, {1.2, 1.2, 1.2, 1.2});
+    ScriptedMulti strategy({{openOrder(Direction::Long, 1000)}});
+
+    const BacktestResult r = runMultiBacktest(d, strategy, kCash, {}, scheduleOf({2, 2, 2, 2}));
+
+    ASSERT_EQ(r.equityCurve.size(), 4u);
+    for (std::size_t i = 0; i < 4; ++i)
+        EXPECT_NEAR(r.equityCurve[i], kCash + static_cast<double>(i) * night(1000, 1.2, 2.0), 1e-9) << i;
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_NEAR(r.openTrades[0].swap, 3 * night(1000, 1.2, 2.0), 1e-12);
+}
+
+TEST(SwapBacktestTest, AShortPaysWhatALongEarns)
+{
+    const AlignedData d = swapData({0, 1, 2}, {1.2, 1.2, 1.2});
+    ScriptedMulti strategy({{openOrder(Direction::Short, 1000)}, {}, {closeOrder(1)}});
+
+    const BacktestResult r = runMultiBacktest(d, strategy, kCash, {}, scheduleOf({2, 2, 2}));
+
+    EXPECT_NEAR(r.closedTrades[0].trade.swap, -2 * night(1000, 1.2, 2.0), 1e-12);
+}
+
+TEST(SwapBacktestTest, AWeekendCountsThreeNights)
+{
+    // Friday (day 4) to Monday (day 7): the gap is three days
+    const AlignedData d = swapData({4, 7}, {1.2, 1.2});
+    ScriptedMulti strategy({{openOrder(Direction::Long, 1000)}, {closeOrder(1)}});
+
+    const BacktestResult r = runMultiBacktest(d, strategy, kCash, {}, scheduleOf({2, 2}));
+
+    EXPECT_NEAR(r.closedTrades[0].trade.swap, 3 * night(1000, 1.2, 2.0), 1e-12);
+}
+
+TEST(SwapBacktestTest, AnHourMoreOrLessAcrossTheClockChangeStillCountsWholeNights)
+{
+    // the daily close is an hour earlier or later when the clocks change: 23 and 25 hours are one night each
+    AlignedData d;
+    d.symbols = {"EURUSD"};
+    const std::int64_t hour = 3600LL * 1000;
+    const std::int64_t t0 = 100 * kSwapDay + 22 * hour, t1 = t0 + 23 * hour, t2 = t1 + 25 * hour;
+    for (std::int64_t t : {t0, t1, t2})
+        d.snapshots.push_back(snap(t, {flatBar(t, 1.2)}));
+    ScriptedMulti strategy({{openOrder(Direction::Long, 1000)}, {}, {closeOrder(1)}});
+
+    const BacktestResult r = runMultiBacktest(d, strategy, kCash, {}, scheduleOf({2, 2, 2}));
+
+    EXPECT_NEAR(r.closedTrades[0].trade.swap, 2 * night(1000, 1.2, 2.0), 1e-12);
+}
+
+TEST(SwapBacktestTest, TheNotionalIsThePreviousClose)
+{
+    const AlignedData d = swapData({0, 1, 2}, {1.2, 1.5, 1.8});
+    ScriptedMulti strategy({{openOrder(Direction::Long, 1000)}, {}, {closeOrder(1)}});
+
+    const BacktestResult r = runMultiBacktest(d, strategy, kCash, {}, scheduleOf({2, 2, 2}));
+
+    // night 1 is worth the day-0 close 1.2, night 2 the day-1 close 1.5
+    EXPECT_NEAR(r.closedTrades[0].trade.swap, night(1000, 1.2, 2.0) + night(1000, 1.5, 2.0), 1e-12);
+}
+
+TEST(SwapBacktestTest, EachNightUsesTheDifferenceInForceAtTheStartOfIt)
+{
+    const AlignedData d = swapData({0, 1, 2, 3}, {1.2, 1.2, 1.2, 1.2});
+    ScriptedMulti strategy({{openOrder(Direction::Long, 1000)}, {}, {}, {closeOrder(1)}});
+
+    const BacktestResult r = runMultiBacktest(d, strategy, kCash, {}, scheduleOf({2, 4, 8, 16}));
+
+    // night 1 uses the value at snapshot 0 (2), night 2 snapshot 1 (4), night 3 snapshot 2 (8); the 16 is never used
+    EXPECT_NEAR(r.closedTrades[0].trade.swap, night(1000, 1.2, 2.0) + night(1000, 1.2, 4.0) + night(1000, 1.2, 8.0), 1e-12);
+}
+
+TEST(SwapBacktestTest, TheMarkupIsPaidByBothDirections)
+{
+    const AlignedData d = swapData({0, 1, 2}, {1.2, 1.2, 1.2});
+    ScriptedMulti longs({{openOrder(Direction::Long, 1000)}, {}, {closeOrder(1)}});
+    ScriptedMulti shorts({{openOrder(Direction::Short, 1000)}, {}, {closeOrder(1)}});
+
+    const BacktestResult l = runMultiBacktest(d, longs, kCash, {}, scheduleOf({2, 2, 2}, 0.5));
+    const BacktestResult s = runMultiBacktest(d, shorts, kCash, {}, scheduleOf({2, 2, 2}, 0.5));
+
+    EXPECT_NEAR(l.closedTrades[0].trade.swap, 2 * night(1000, 1.2, 1.5), 1e-12);        // 2 - 0.5
+    EXPECT_NEAR(s.closedTrades[0].trade.swap, 2 * night(1000, 1.2, -2.5), 1e-12);       // -2 - 0.5
+}
+
+TEST(SwapBacktestTest, AMarkupWithoutRatesStillCharges)
+{
+    const AlignedData d = swapData({0, 1}, {1.2, 1.2});
+    ScriptedMulti strategy({{openOrder(Direction::Long, 1000)}, {closeOrder(1)}});
+    SwapSchedule s;
+    s.markupPct = 1.0;                                   // no differences at all
+
+    const BacktestResult r = runMultiBacktest(d, strategy, kCash, {}, s);
+
+    EXPECT_NEAR(r.closedTrades[0].trade.swap, night(1000, 1.2, -1.0), 1e-12);
+}
+
+TEST(SwapBacktestTest, AnUnknownDifferenceMeansNoInterest)
+{
+    const AlignedData d = swapData({0, 1, 2}, {1.2, 1.2, 1.2});
+    ScriptedMulti strategy({{openOrder(Direction::Long, 1000)}, {}, {closeOrder(1)}});
+
+    const BacktestResult r = runMultiBacktest(d, strategy, kCash, {}, scheduleOf({std::nan(""), std::nan(""), std::nan("")}));
+
+    EXPECT_DOUBLE_EQ(r.closedTrades[0].trade.swap, 0.0);
+}
+
+TEST(SwapBacktestTest, NoScheduleOrAnInactiveOneChangesNothing)
+{
+    const AlignedData d = swapData({0, 1, 2}, {1.2, 1.3, 1.1});
+    ScriptedMulti a({{openOrder(Direction::Long, 1000)}, {}, {closeOrder(1)}});
+    ScriptedMulti b({{openOrder(Direction::Long, 1000)}, {}, {closeOrder(1)}});
+
+    const BacktestResult plain = runMultiBacktest(d, a, kCash);
+    const BacktestResult inactive = runMultiBacktest(d, b, kCash, {}, SwapSchedule{});
+
+    EXPECT_DOUBLE_EQ(plain.finalEquity, inactive.finalEquity);
+    EXPECT_DOUBLE_EQ(plain.closedTrades[0].pnl, inactive.closedTrades[0].pnl);
+    EXPECT_DOUBLE_EQ(plain.closedTrades[0].trade.swap, 0.0);
+}
+
+TEST(SwapBacktestTest, NothingIsChargedWhileFlat)
+{
+    const AlignedData d = swapData({0, 1, 2, 3}, {1.2, 1.2, 1.2, 1.2});
+    ScriptedMulti strategy({{}, {openOrder(Direction::Long, 1000)}, {closeOrder(1)}, {}});     // held only from day 1 to day 2
+
+    const BacktestResult r = runMultiBacktest(d, strategy, kCash, {}, scheduleOf({2, 2, 2, 2}));
+
+    EXPECT_NEAR(r.closedTrades[0].trade.swap, night(1000, 1.2, 2.0), 1e-12);                 // one night, not three
+    EXPECT_NEAR(r.finalEquity, kCash + night(1000, 1.2, 2.0), 1e-9);
+}
+
+TEST(SwapBacktestTest, AStopHitDuringTheDayStillPaysTheNightBefore)
+{
+    AlignedData d;
+    d.symbols = {"EURUSD"};
+    d.snapshots.push_back(snap(0, {flatBar(0, 1.2)}));
+    d.snapshots.push_back(snap(kSwapDay, {makeBar(kSwapDay, 1.2, 1.2, 1.0, 1.1)}));         // the low takes out the stop at 1.1
+    ScriptedMulti strategy({{openOrder(Direction::Long, 1000, 1.1)}});
+
+    const BacktestResult r = runMultiBacktest(d, strategy, kCash, {}, scheduleOf({2, 2}));
+
+    ASSERT_EQ(r.closedTrades.size(), 1u);
+    EXPECT_NEAR(r.closedTrades[0].trade.swap, night(1000, 1.2, 2.0), 1e-12);
+}
+
+TEST(SwapBacktestTest, ATradeOnAnAssetWithNoBarTodayStillAccruesAtItsLastClose)
+{
+    AlignedData d;
+    d.symbols = {"EURUSD", "GBPUSD"};
+    d.snapshots.push_back(snap(0, {flatBar(0, 1.2), flatBar(0, 1.3)}));
+    d.snapshots.push_back(snap(kSwapDay, {std::nullopt, flatBar(kSwapDay, 1.3)}));          // EURUSD has no bar today
+    d.snapshots.push_back(snap(2 * kSwapDay, {flatBar(2 * kSwapDay, 1.25), flatBar(2 * kSwapDay, 1.3)}));
+    SwapSchedule s;
+    s.differentialPct = {{2, 2, 2}, {0, 0, 0}};
+    ScriptedMulti strategy({{openOrder(Direction::Long, 1000, std::nullopt, std::nullopt, 0)}, {}, {closeOrder(1)}});
+
+    const BacktestResult r = runMultiBacktest(d, strategy, kCash, {}, s);
+
+    // night 1 (no bar on day 1 does not stop it) is worth the day-0 close 1.2; night 2 the last known close, still 1.2
+    EXPECT_NEAR(r.closedTrades[0].trade.swap, 2 * night(1000, 1.2, 2.0), 1e-12);
+}
+
+TEST(SwapBacktestTest, EachAssetUsesItsOwnRow)
+{
+    AlignedData d;
+    d.symbols = {"EURUSD", "USDJPY"};
+    for (int i = 0; i < 3; ++i)
+    {
+        const std::int64_t t = static_cast<std::int64_t>(i) * kSwapDay;
+        d.snapshots.push_back(snap(t, {flatBar(t, 1.2), flatBar(t, 100.0)}));
+    }
+    SwapSchedule s;
+    s.differentialPct = {{2, 2, 2}, {-3, -3, -3}};
+    ScriptedMulti strategy({{openOrder(Direction::Long, 1000, std::nullopt, std::nullopt, 0),
+                             openOrder(Direction::Long, 10, std::nullopt, std::nullopt, 1)}, {}, {closeOrder(1), closeOrder(2)}});
+
+    const BacktestResult r = runMultiBacktest(d, strategy, kCash, {}, s);
+
+    ASSERT_EQ(r.closedTrades.size(), 2u);
+    EXPECT_NEAR(r.closedTrades[0].trade.swap, 2 * night(1000, 1.2, 2.0), 1e-12);
+    EXPECT_NEAR(r.closedTrades[1].trade.swap, 2 * night(10, 100.0, -3.0), 1e-12);
+}

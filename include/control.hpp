@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "nnfx_strategy.hpp"
-#include "optimiser.hpp"
+#include "system_run.hpp"
 
 // The direction control: does the baseline's direction add anything over luck?
 //
@@ -26,7 +26,7 @@ struct ArmResult
 };
 
 // Runs one strategy once over `data` (costs, cash and periods per year from `grid`) and summarises it.
-ArmResult runArm(const AlignedData& data, const Params& params, const StrategyFactory& factory, const GridOptions& grid);
+ArmResult runArm(const AlignedData& data, const Params& params, const StrategyFactory& factory, const RunOptions& grid);
 
 // Share of the finite `samples` that are below `value`; samples equal to it count half. NaN if `value` is NaN
 // or there is no finite sample.
@@ -47,7 +47,7 @@ using NnfxFactoryMaker = std::function<StrategyFactory(const NnfxOptions&)>;
 // costs and thread count. The numbers do not depend on the thread count.
 // Throws std::invalid_argument if seeds < 1, options.exitOnCross is true, or options.randomSeed is set.
 ControlResult runDirectionControl(const AlignedData& data, const Params& params, const NnfxFactoryMaker& make,
-                                  const NnfxOptions& options, int seeds, const GridOptions& grid = GridOptions{});
+                                  const NnfxOptions& options, int seeds, const RunOptions& grid = RunOptions{});
 
 // A short table of one control result. `label` names the data (e.g. "out-of-sample").
 std::string formatControl(const std::string& label, const ControlResult& result);

@@ -1,7 +1,8 @@
 // TEMPLATE for a new NNFX component (confirmation, exit indicator or filter). Copy to
-// include/components/<name>.hpp (lowercase, digits, underscores) and change the marked places. Nothing else needs
-// editing: CMake finds the file, `--confirm <name>` / `--exit-indicator <name>` / `--filter <name>` work, and
-// tests/components_test.cpp checks it automatically.
+// include/components/<name>/<name>.hpp (lowercase, digits, underscores; the folder and the file have the same name) and
+// change the marked places. Nothing else needs editing: CMake finds the file, `--confirm <name>` / `--exit-indicator <name>` /
+// `--filter <name>` work, and tests/components_test.cpp checks it automatically. Put the component's own tests next to it,
+// include/components/<name>/<name>_test.cpp (CMake finds those too; the whole components folder is git-ignored).
 //
 // Pick ONE kind:
 //   State  state() returns +1 (bullish), -1 (bearish) or 0 (neutral)  -> confirmation or exit indicator
@@ -11,7 +12,7 @@
 
 #include <stdexcept>
 
-#include "../components.hpp"
+#include "../../components.hpp"
 
 namespace components::NAME            // <- 1. the same as the file name, e.g. components::macd
 {

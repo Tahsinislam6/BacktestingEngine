@@ -5,25 +5,14 @@
 #include <string>
 #include <vector>
 
-#include "optimiser.hpp"
-
-enum class Mode { Flip, Nnfx };
-
 struct CliOptions
 {
-    std::string baseline{"sma"};
-    Mode mode{Mode::Flip};              // flip = always in the market; nnfx = NNFX entries, stops and targets
+    std::string baseline;               // required unless --signal: the entry signal of the system
+    std::string params;                 // the baseline's parameters, "period=26,mult=2" (checked against the baseline in main)
     std::string inSampleDir;            // required (unless --help)
     std::string outSampleDir;           // optional
-    std::string csvOut;                 // optional: write the ranked runs here
-    Objective objective{Objective::Sharpe};
-    int minTrades{30};
     int threads{0};
-    double trainFraction{0.7};
-    std::size_t walkTrain{0};           // 0 and 0 = no walk-forward
-    std::size_t walkTest{0};
     double startingCash{100000.0};
-    std::size_t top{15};
     bool keepSundays{false};            // true = do not fold Sunday bars into Monday
     std::string costsFile;              // optional: "symbol,spread_pips" rows replacing the typical spreads
     double spreadMultiplier{1.0};       // scales every spread
@@ -42,13 +31,17 @@ struct CliOptions
     int entryControl{0};                // nnfx: random stand-ins to compare each chosen confirmation / filter with, on the entry study; 0 = off
     int entryStudy{0};                  // nnfx: random-direction runs for the entry study (what price does after a signal); 0 = off
     int componentControl{0};            // nnfx: random stand-ins to compare each chosen component with; 0 = off
-    bool screen{false};                 // screen every baseline (nnfx, no cross-back exit, with the control)
-    std::string screenCsv;              // optional: write the screen table here
-    double minBeats{0.9};               // screen: share of random runs a candidate must beat
-    double minExpectancy{0.03};         // screen: expectancy in R a candidate must reach
-    std::string logDir;                 // optional: append every screen / control result to the csv logs in this folder
+    std::string gridFile;               // --grid <plan>: test every baseline x C1 pair listed in the plan file (see grid.hpp)
+    std::string holdoutDir;             // grid: data the finalists are run on once, never chosen on
+    std::string ledgerFile;             // grid: the tries ledger to append one row to
+    int priorTries{0};                  // grid: pairs tried before on the same data (counted in the correction)
+    double minBeats{0.9};               // grid: share of random runs a pair must beat (also after the correction)
+    double minExpectancy{0.03};         // grid: expectancy in R a pair must reach
+    std::string logDir;                 // optional: append every control / entry-study result to the csv logs in this folder
     std::string note;                   // optional: why this test was run (goes into the log rows)
     bool noCosts{false};                // true = trade with no spread at all
+    std::string ratesFile;              // optional: "currency,date,rate" interest rates; turns swap (financing) on
+    double swapMarkup{0.0};             // broker markup on swap, percentage points a year, against the trader
     bool help{false};
 };
 

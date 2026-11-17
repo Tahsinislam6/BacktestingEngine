@@ -323,7 +323,7 @@ TEST(BaselinesTest, BothTradingModesRunWithEveryBaseline)
     for (const BaselineInfo& b : baselineRegistry())
         for (const Params& p : sampleParams(b))
         {
-            for (const StrategyFactory& factory : {b.flip, b.nnfx(NnfxOptions{})})
+            for (const StrategyFactory& factory : {b.nnfx(NnfxOptions{})})
             {
                 auto strategy = factory(p, data.symbols.size());
                 ASSERT_NE(strategy, nullptr) << describe(b, p);
@@ -332,27 +332,4 @@ TEST(BaselinesTest, BothTradingModesRunWithEveryBaseline)
                 EXPECT_TRUE(std::isfinite(r.finalEquity)) << describe(b, p);
             }
         }
-}
-
-TEST(BaselinesTest, TheNnfxWarmUpCoversTheAtrAndTheComponents)
-{
-    const BaselineInfo& b = baselineRegistry().front();
-    const Params p = expandGrid(b.ranges).front();
-    const std::size_t line = b.warmupBars(p);
-
-    NnfxOptions plain;
-    EXPECT_EQ(nnfxWarmupBars(b, plain)(p), std::max<std::size_t>(line, 14) + 1);
-
-    NnfxOptions withComponents;
-    withComponents.components.filter = std::shared_ptr<const AnyGate>(nullptr);
-    struct Slow : AnyState
-    {
-        void update(const Bar&) override {}
-        bool ready() const override { return true; }
-        int state() const override { return 0; }
-        std::size_t warmupBars() const override { return 400; }
-        std::unique_ptr<AnyState> clone() const override { return std::make_unique<Slow>(); }
-    };
-    withComponents.components.confirmation = std::make_shared<Slow>();
-    EXPECT_EQ(nnfxWarmupBars(b, withComponents)(p), std::max<std::size_t>(line, 400) + 1);
 }

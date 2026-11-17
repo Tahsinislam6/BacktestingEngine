@@ -21,7 +21,7 @@ namespace
 NnfxOptions makeNnfxOptions(const CliOptions& cli)
 {
     NnfxOptions o;
-    o.exitOnCross = !cli.noCrossExit && !cli.screen;
+    o.exitOnCross = !cli.noCrossExit;
     o.confirmationWindow = cli.confirmWindow;
     o.oneCandleRule = cli.oneCandle;
     o.continuation = cli.continuation;

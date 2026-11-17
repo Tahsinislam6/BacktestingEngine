@@ -354,3 +354,58 @@ TEST(PortfolioStopTest, AClosedTradeKeepsTheMovedStopAndTheInitialOne)
     EXPECT_DOUBLE_EQ(*t.stopLoss, 100.0);
     EXPECT_DOUBLE_EQ(*t.initialStop, 95.0);
 }
+
+// ---------- swap accrued on an open trade ----------
+// accrueSwap(id, amount) adds a night's financing (positive = earned) to an open trade. It is part of the trade's result:
+// the equity includes it, and when the trade closes its pnl does.
+
+TEST(PortfolioSwapTest, AccruedSwapIsPartOfTheEquity)
+{
+    Portfolio p(10000.0);
+    const int id = p.open(Direction::Long, 10, 100, 1);
+
+    EXPECT_TRUE(p.accrueSwap(id, 2.5));
+    EXPECT_TRUE(p.accrueSwap(id, -0.5));
+
+    EXPECT_DOUBLE_EQ(p.equity(100.0), 10002.0);                      // plain price, no price move
+    EXPECT_DOUBLE_EQ(p.equity(std::vector<double>{100.0}), 10002.0);
+    EXPECT_DOUBLE_EQ(p.equity(std::vector<double>{110.0}), 10102.0);        // 10 * 10 + 2
+    EXPECT_DOUBLE_EQ(p.openTrades()[0].swap, 2.0);
+}
+
+TEST(PortfolioSwapTest, TheSwapOfATradeWithoutAMarkIsStillCounted)
+{
+    Portfolio p(10000.0);
+    const int id = p.open(Direction::Short, 10, 100, 1, std::nullopt, std::nullopt, 3);
+    p.accrueSwap(id, 4.0);
+    EXPECT_DOUBLE_EQ(p.equity(std::vector<double>{100.0}), 10004.0);        // asset 3 has no mark: valued at entry, plus swap
+}
+
+TEST(PortfolioSwapTest, ClosingPutsTheSwapIntoThePnlAndTheCash)
+{
+    Portfolio p(10000.0);
+    const int id = p.open(Direction::Long, 10, 100, 1);
+    p.accrueSwap(id, 3.0);
+
+    p.close(id, 105.0, 2, ExitReason::Signal);
+
+    ASSERT_EQ(p.closedTrades().size(), 1u);
+    EXPECT_DOUBLE_EQ(p.closedTrades()[0].pnl, 53.0);                 // 10 * 5 + 3
+    EXPECT_DOUBLE_EQ(p.closedTrades()[0].trade.swap, 3.0);
+    EXPECT_DOUBLE_EQ(p.equity(105.0), 10053.0);
+}
+
+TEST(PortfolioSwapTest, AnUnknownIdIsRefusedAndChangesNothing)
+{
+    Portfolio p(10000.0);
+    p.open(Direction::Long, 10, 100, 1);
+    EXPECT_FALSE(p.accrueSwap(99, 5.0));
+    EXPECT_DOUBLE_EQ(p.equity(100.0), 10000.0);
+}
+
+TEST(PortfolioSwapTest, ATradeStartsWithNoSwap)
+{
+    Portfolio p(10000.0);
+    p.open(Direction::Long, 10, 100, 1);
+    EXPECT_DOUBLE_EQ(p.openTrades()[0].swap, 0.0);
+}
