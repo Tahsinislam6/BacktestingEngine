@@ -37,10 +37,13 @@ struct CliOptions
     bool continuation{false};           // nnfx: re-enter while price stays on the same side of the baseline
     std::optional<double> maxOpenRisk;      // nnfx: cap on the total risk of open signals, as a share of equity
     std::optional<int> maxPerCurrency;      // nnfx: cap on net signals per currency
+    int componentControl{0};            // nnfx: random stand-ins to compare each chosen component with; 0 = off
     bool screen{false};                 // screen every baseline (nnfx, no cross-back exit, with the control)
     std::string screenCsv;              // optional: write the screen table here
     double minBeats{0.9};               // screen: share of random runs a candidate must beat
     double minExpectancy{0.03};         // screen: expectancy in R a candidate must reach
+    std::string logDir;                 // optional: append every screen / control result to the csv logs in this folder
+    std::string note;                   // optional: why this test was run (goes into the log rows)
     bool noCosts{false};                // true = trade with no spread at all
     bool help{false};
 };

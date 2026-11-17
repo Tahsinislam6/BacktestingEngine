@@ -408,3 +408,69 @@ TEST(CliTest, UsageMentionsTheComponentOptions)
                              "--continuation", "--max-open-risk", "--max-per-currency"})
         EXPECT_NE(usage().find(flag), std::string::npos) << flag;
 }
+
+// ---------- component control ----------
+
+TEST(CliTest, TheComponentControlIsOffByDefault)
+{
+    EXPECT_EQ(parse(base()).componentControl, 0);
+}
+
+TEST(CliTest, ReadsTheComponentControlCount)
+{
+    const CliOptions o = parse(with({"--mode", "nnfx", "--confirm", "rsi", "--component-control", "100"}));
+
+    EXPECT_EQ(o.componentControl, 100);
+}
+
+TEST(CliTest, TheComponentControlNeedsNnfxModeAndAComponent)
+{
+    EXPECT_THROW(parse(with({"--component-control", "50"})), std::invalid_argument);                      // flip mode
+    EXPECT_THROW(parse(with({"--mode", "nnfx", "--component-control", "50"})), std::invalid_argument);    // nothing to control
+    EXPECT_NO_THROW(parse(with({"--mode", "nnfx", "--filter", "atr_expansion", "--component-control", "50"})));
+    EXPECT_NO_THROW(parse(with({"--mode", "nnfx", "--exit-indicator", "rsi", "--component-control", "50"})));
+}
+
+TEST(CliTest, TheComponentControlCannotBeCombinedWithTheScreen)
+{
+    EXPECT_THROW(parse({"--screen", "--insample", "a", "--outsample", "b", "--confirm", "rsi", "--component-control", "50"}),
+                 std::invalid_argument);
+}
+
+TEST(CliTest, TheComponentControlCountMustBeAWholeNumber)
+{
+    EXPECT_THROW(parse(with({"--mode", "nnfx", "--confirm", "rsi", "--component-control", "-1"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--mode", "nnfx", "--confirm", "rsi", "--component-control", "x"})), std::invalid_argument);
+}
+
+TEST(CliTest, UsageMentionsTheComponentControl)
+{
+    EXPECT_NE(usage().find("--component-control"), std::string::npos);
+}
+
+TEST(CliTest, TheLogIsOffByDefault)
+{
+    const CliOptions o = parse(base());
+    EXPECT_TRUE(o.logDir.empty());
+    EXPECT_TRUE(o.note.empty());
+}
+
+TEST(CliTest, ReadsTheLogFolderAndNote)
+{
+    const CliOptions o = parse(with({"--screen", "--outsample", "data/out", "--log-dir", "results", "--note", "first try"}));
+    EXPECT_EQ(o.logDir, "results");
+    EXPECT_EQ(o.note, "first try");
+}
+
+TEST(CliTest, TheLogFolderNeedsATestThatIsLogged)
+{
+    EXPECT_THROW(parse(with({"--log-dir", "results"})), std::invalid_argument);
+    EXPECT_NO_THROW(parse(with({"--mode", "nnfx", "--no-cross-exit", "--control", "50", "--log-dir", "results"})));
+    EXPECT_NO_THROW(parse(with({"--mode", "nnfx", "--confirm", "rsi", "--component-control", "50", "--log-dir", "results"})));
+    EXPECT_NO_THROW(parse(with({"--screen", "--outsample", "data/out", "--log-dir", "results"})));
+}
+
+TEST(CliTest, TheNoteNeedsTheLogFolder)
+{
+    EXPECT_THROW(parse(with({"--screen", "--outsample", "data/out", "--note", "why"})), std::invalid_argument);
+}

@@ -18,16 +18,6 @@ namespace
     std::string num(double v, const char* format = "%.2f") { return std::isnan(v) ? "nan" : fmt(format, v); }
     std::string pct(double f) { return std::isnan(f) ? "n/a" : fmt("%.0f%%", 100.0 * f); }
 
-    std::string csvField(const std::string& s)
-    {
-        if (s.find_first_of(",\"\n") == std::string::npos)
-            return s;
-        std::string out = "\"";
-        for (char c : s)
-            out += c == '"' ? "\"\"" : std::string(1, c);
-        return out + "\"";
-    }
-
     ScreenRow screenOne(const BaselineInfo& baseline, const AlignedData& inSample, const AlignedData& outOfSample,
                         const ScreenOptions& options)
     {
@@ -131,19 +121,27 @@ std::string screenTable(const std::vector<ScreenRow>& rows, const ScreenOptions&
     return out;
 }
 
+std::string screenCsvHeader()
+{
+    return "baseline,params,in_sample_sharpe,neighbour_share,time_split_score,oos_sharpe,oos_expectancy_r,"
+           "oos_trades,oos_beats_expectancy,oos_beats_sharpe,in_sample_beats_expectancy,candidate,error\n";
+}
+
+std::string screenCsvRow(const ScreenRow& r)
+{
+    std::string out = csvField(r.name) + "," + csvField(r.params);
+    for (double v : {r.inSampleSharpe, r.neighbourShare, r.timeSplitScore, r.oosSharpe, r.oosExpectancyR})
+        out += "," + num(v, "%.6g");
+    out += "," + std::to_string(r.oosTrades);
+    for (double v : {r.oosBeatsExpectancy, r.oosBeatsSharpe, r.inSampleBeatsExpectancy})
+        out += "," + num(v, "%.6g");
+    return out + std::string(",") + (r.candidate ? "yes" : "no") + "," + csvField(r.error) + "\n";
+}
+
 std::string screenCsv(const std::vector<ScreenRow>& rows)
 {
-    std::string out = "baseline,params,in_sample_sharpe,neighbour_share,time_split_score,oos_sharpe,oos_expectancy_r,"
-                      "oos_trades,oos_beats_expectancy,oos_beats_sharpe,in_sample_beats_expectancy,candidate,error\n";
+    std::string out = screenCsvHeader();
     for (const ScreenRow& r : rows)
-    {
-        out += csvField(r.name) + "," + csvField(r.params);
-        for (double v : {r.inSampleSharpe, r.neighbourShare, r.timeSplitScore, r.oosSharpe, r.oosExpectancyR})
-            out += "," + num(v, "%.6g");
-        out += "," + std::to_string(r.oosTrades);
-        for (double v : {r.oosBeatsExpectancy, r.oosBeatsSharpe, r.inSampleBeatsExpectancy})
-            out += "," + num(v, "%.6g");
-        out += std::string(",") + (r.candidate ? "yes" : "no") + "," + csvField(r.error) + "\n";
-    }
+        out += screenCsvRow(r);
     return out;
 }

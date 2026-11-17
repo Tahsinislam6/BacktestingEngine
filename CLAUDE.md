@@ -40,6 +40,23 @@ three marked places, build, run the tests. CMake finds it and `tests/components_
 - These work with `--mode nnfx` and with `--screen` (the same components are applied to every baseline).
 Examples: `... --mode nnfx --confirm rsi --filter atr_expansion --max-per-currency 2`
 
+Testing a component (does it add anything?): add `--component-control 100`. For each chosen component it runs the
+winner with the real component, without it, and with 100 random stand-ins that show the same state frequencies and
+persistence (a Markov chain measured on the data; it knows nothing about prices), one role at a time with the others
+left as given. Read the out-of-sample "it beats" column: ~50% = no better than a random component. The in-sample
+lines were tuned with the component, so ignore them. When the random arms trade rarely their expectancy is noisy, so
+look at total R / Sharpe and the trade counts too. Like every other test, log it and never tune on the result.
+
+## Results log (one csv per type of test)
+
+Add `--log-dir results [--note "why"]` to `--screen`, `--control N` or `--component-control N`. Rows are only ever
+appended (header written once), one file per test type in that folder:
+`screen_log.csv` (one row per baseline), `direction_control_log.csv` (one row per data set),
+`component_control_log.csv` (one row per component per data set). Every row starts with timestamp, note, setup (the
+nnfx switches, objective, min trades), costs and the data folders, then the numbers. Always pass `--note` saying
+what the test was for and what you decided in advance (the pass rule). A log file with other columns than the program
+writes is refused: move it aside to start a new one. Read the `data = out-of-sample` rows; in-sample is tuned.
+
 ## Screening baselines (the loop to follow for each new indicator)
 
 1. Add the baseline file (above), build, run `./build/engine_tests`; fix anything the generic tests flag.

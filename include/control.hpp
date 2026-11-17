@@ -25,6 +25,9 @@ struct ArmResult
     int trades{};              // closed trades with a stop
 };
 
+// Runs one strategy once over `data` (costs, cash and periods per year from `grid`) and summarises it.
+ArmResult runArm(const AlignedData& data, const Params& params, const StrategyFactory& factory, const GridOptions& grid);
+
 // Share of the finite `samples` that are below `value`; samples equal to it count half. NaN if `value` is NaN
 // or there is no finite sample.
 double percentileRank(double value, const std::vector<double>& samples);

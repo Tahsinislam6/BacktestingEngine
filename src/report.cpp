@@ -104,6 +104,16 @@ std::string rankedCsv(const std::vector<Ranked>& ranked)
     return out;
 }
 
+std::string csvField(const std::string& s)
+{
+    if (s.find_first_of(",\"\n") == std::string::npos)
+        return s;
+    std::string out = "\"";
+    for (char c : s)
+        out += c == '"' ? "\"\"" : std::string(1, c);
+    return out + "\"";
+}
+
 void writeTextFile(const std::string& path, const std::string& text)
 {
     std::ofstream file(path, std::ios::trunc);

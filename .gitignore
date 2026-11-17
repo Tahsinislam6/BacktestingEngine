@@ -108,6 +108,6 @@ node_modules/
 
 # ---- Baselines: every header in include/baselines/ stays local ----
 include/baselines/*
-tests/baselines_test.cpp
-tests/ema_test.cpp
-tests/kijun_test.cpp
+
+# ---- Components: every header in include/components/ stays local ----
+include/components/*

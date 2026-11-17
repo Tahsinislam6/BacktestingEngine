@@ -124,6 +124,7 @@ CliOptions parseArgs(const std::vector<std::string>& args)
             if (!(o.trainFraction > 0.0 && o.trainFraction < 1.0))
                 throw std::invalid_argument("--train-fraction must be between 0 and 1");
         }
+        else if (flag == "--component-control") { o.componentControl = static_cast<int>(toWholeNumber(flag, value(), 0)); nnfxOnly = true; }
         else if (flag == "--confirm")        { o.confirm = value(); nnfxOnly = true; }
         else if (flag == "--exit-indicator") { o.exitIndicator = value(); nnfxOnly = true; }
         else if (flag == "--filter")         { o.filter = value(); nnfxOnly = true; }
@@ -138,6 +139,8 @@ CliOptions parseArgs(const std::vector<std::string>& args)
             nnfxOnly = true;
         }
         else if (flag == "--screen-csv")     o.screenCsv = value();
+        else if (flag == "--log-dir")        o.logDir = value();
+        else if (flag == "--note")           o.note = value();
         else if (flag == "--min-beats")
         {
             o.minBeats = toDouble(flag, value());
@@ -180,6 +183,14 @@ CliOptions parseArgs(const std::vector<std::string>& args)
     if (!o.screen && nnfxOnly && o.mode != Mode::Nnfx)
         throw std::invalid_argument("--confirm, --exit-indicator, --filter, --confirm-window, --one-candle, --continuation, "
                                     "--max-open-risk and --max-per-currency only apply with --mode nnfx (or --screen)");
+    if (!o.note.empty() && o.logDir.empty())
+        throw std::invalid_argument("--note needs --log-dir (it is written into the log rows)");
+    if (!o.logDir.empty() && !o.screen && o.control == 0 && o.componentControl == 0)
+        throw std::invalid_argument("--log-dir needs --screen, --control or --component-control (only those results are logged)");
+    if (o.componentControl > 0 && o.screen)
+        throw std::invalid_argument("--component-control cannot be combined with --screen");
+    if (o.componentControl > 0 && o.confirm.empty() && o.exitIndicator.empty() && o.filter.empty())
+        throw std::invalid_argument("--component-control needs --confirm, --exit-indicator or --filter to control");
     if (!o.screen && o.noCrossExit && o.mode != Mode::Nnfx)
         throw std::invalid_argument("--no-cross-exit only applies with --mode nnfx");
     if (!o.screen && o.control > 0 && o.mode != Mode::Nnfx)
@@ -215,6 +226,9 @@ std::string usage()
         "  --continuation           nnfx: re-enter while price stays on the same side of the baseline\n"
         "  --max-open-risk <x>      nnfx: cap on the total risk of open signals as a share of equity (0.06 = 6%)\n"
         "  --max-per-currency <n>   nnfx: cap on net signals per currency (long EURUSD and GBPUSD both short USD)\n"
+        "  --component-control <n>  nnfx: compare each chosen component with n random ones that behave the same\n"
+        "  --log-dir <folder>       append every screen / control result to the csv logs in this folder (one file per test type)\n"
+        "  --note <text>            with --log-dir: why this test was run (kept in the log rows)\n"
         "  --no-cross-exit          nnfx: do not close when the baseline crosses back (stop, target, breakeven only)\n"
         "  --control <n>            nnfx: compare the winner's direction with n random-direction runs (needs --no-cross-exit)\n"
         "  --objective <name>       sharpe (default), sortino, calmar, return or capture\n"

@@ -52,5 +52,9 @@ void sortScreenRows(std::vector<ScreenRow>& rows);
 
 std::string screenTable(const std::vector<ScreenRow>& rows, const ScreenOptions& options);
 
+// The csv header line, and one row's line (both end in "\n"; the same columns as screenCsv).
+std::string screenCsvHeader();
+std::string screenCsvRow(const ScreenRow& row);
+
 // One header line and one line per row. Numbers undefined are "nan"; fields with a comma are quoted.
 std::string screenCsv(const std::vector<ScreenRow>& rows);

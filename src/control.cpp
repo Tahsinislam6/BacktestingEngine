@@ -28,29 +28,29 @@ double percentileRank(double value, const std::vector<double>& samples)
     return counted > 0 ? below / counted : std::numeric_limits<double>::quiet_NaN();
 }
 
+ArmResult runArm(const AlignedData& data, const Params& params, const StrategyFactory& factory,
+                 const GridOptions& grid)
+{
+    std::unique_ptr<MultiStrategy> strategy = factory(params, data.symbols.size());
+    if (!strategy)
+        throw std::invalid_argument("the strategy factory returned no strategy");
+
+    const BacktestResult run = runMultiBacktest(data, *strategy, grid.startingCash,
+                                                spreadsFor(grid.costs, data.symbols));
+    const Metrics m = computeMetrics(run, grid.startingCash, grid.periodsPerYear);
+    const RReport r = computeRReport(run.closedTrades);
+
+    ArmResult a;
+    a.sharpe = m.sharpe;
+    a.totalReturn = m.totalReturn;
+    a.expectancyR = r.all.expectancyR;
+    a.totalR = r.all.totalR;
+    a.trades = r.all.trades;
+    return a;
+}
+
 namespace
 {
-    ArmResult runArm(const AlignedData& data, const Params& params, const StrategyFactory& factory,
-                     const GridOptions& grid)
-    {
-        std::unique_ptr<MultiStrategy> strategy = factory(params, data.symbols.size());
-        if (!strategy)
-            throw std::invalid_argument("the strategy factory returned no strategy");
-
-        const BacktestResult run = runMultiBacktest(data, *strategy, grid.startingCash,
-                                                    spreadsFor(grid.costs, data.symbols));
-        const Metrics m = computeMetrics(run, grid.startingCash, grid.periodsPerYear);
-        const RReport r = computeRReport(run.closedTrades);
-
-        ArmResult a;
-        a.sharpe = m.sharpe;
-        a.totalReturn = m.totalReturn;
-        a.expectancyR = r.all.expectancyR;
-        a.totalR = r.all.totalR;
-        a.trades = r.all.trades;
-        return a;
-    }
-
     template <typename Member>
     std::vector<double> column(const std::vector<ArmResult>& arms, Member member)
     {

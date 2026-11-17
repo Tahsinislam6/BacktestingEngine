@@ -1,12 +1,15 @@
 #include <algorithm>
+#include <ctime>
 #include <iostream>
 
 #include "baseline_registry.hpp"
 #include "cli.hpp"
+#include "component_control.hpp"
 #include "control.hpp"
 #include "costs.hpp"
 #include "dataset.hpp"
 #include "nnfx_setup.hpp"
+#include "result_log.hpp"
 #include "screen.hpp"
 #include "study.hpp"
 
@@ -54,6 +57,7 @@ int main(int argc, char** argv)
         study.walkTestBars = cli.walkTest;
 
         const AlignedData inSample = loadFolder(cli.inSampleDir, !cli.keepSundays);
+        const LogContext logContext = makeLogContext(cli, std::time(nullptr));
 
         if (cli.screen)
         {
@@ -71,6 +75,11 @@ int main(int argc, char** argv)
 
             const std::vector<ScreenRow> rows = screenBaselines(baselineRegistry(), inSample, outOfSample, screen);
             std::cout << screenTable(rows, screen);
+            if (!cli.logDir.empty())
+            {
+                appendLog(cli.logDir, kScreenLogFile, screenLogHeader(), screenLogRows(logContext, rows, screen.controlRuns));
+                std::cout << "\nLogged " << rows.size() << " rows to " << cli.logDir << "/" << kScreenLogFile << "\n";
+            }
             if (!cli.screenCsv.empty())
             {
                 writeTextFile(cli.screenCsv, screenCsv(rows));
@@ -107,9 +116,53 @@ int main(int argc, char** argv)
             const GridOptions& grid = study.validation.optimise.grid;
             std::cout << "\nDIRECTION CONTROL (winner " << paramsText(winner) << "; the winner was tuned on the in-sample data, "
                          "so only the out-of-sample line is a fair test)\n";
-            std::cout << formatControl("in-sample", runDirectionControl(inSample, winner, baseline->nnfx, nnfx, cli.control, grid));
+            std::vector<std::string> logRows;
+            const auto run = [&](const char* label, const AlignedData& data)
+            {
+                const ControlResult control = runDirectionControl(data, winner, baseline->nnfx, nnfx, cli.control, grid);
+                std::cout << formatControl(label, control);
+                logRows.push_back(directionLogRow(logContext, baseline->name, paramsText(winner), label, cli.control, control));
+            };
+            run("in-sample", inSample);
             if (!cli.outSampleDir.empty())
-                std::cout << formatControl("out-of-sample", runDirectionControl(outOfSample, winner, baseline->nnfx, nnfx, cli.control, grid));
+                run("out-of-sample", outOfSample);
+            if (!cli.logDir.empty())
+            {
+                appendLog(cli.logDir, kDirectionLogFile, directionLogHeader(), logRows);
+                std::cout << "Logged to " << cli.logDir << "/" << kDirectionLogFile << "\n";
+            }
+        }
+
+        if (cli.componentControl > 0 && !result.ranking.empty())
+        {
+            const Params& winner = result.ranking[0].evaluation.params;
+            const GridOptions& grid = study.validation.optimise.grid;
+            std::cout << "\nCOMPONENT CONTROL (winner " << paramsText(winner) << "; the winner was tuned on the in-sample "
+                         "data with these components, so only the out-of-sample lines are a fair test)\n";
+            std::vector<std::string> logRows;
+            struct Role { ComponentRole role; const std::string& name; };
+            for (const Role& r : {Role{ComponentRole::Confirmation, cli.confirm}, Role{ComponentRole::ExitIndicator, cli.exitIndicator},
+                                  Role{ComponentRole::Filter, cli.filter}})
+            {
+                if (r.name.empty())
+                    continue;
+                const auto run = [&](const char* label, const AlignedData& data)
+                {
+                    const ComponentControlResult control =
+                        runComponentControl(data, winner, baseline->nnfx, nnfx, r.role, cli.componentControl, grid);
+                    std::cout << formatComponentControl(label, r.name, r.role, control);
+                    logRows.push_back(componentLogRow(logContext, baseline->name, paramsText(winner), r.role, r.name, label,
+                                                      cli.componentControl, control));
+                };
+                run("in-sample", inSample);
+                if (!cli.outSampleDir.empty())
+                    run("out-of-sample", outOfSample);
+            }
+            if (!cli.logDir.empty())
+            {
+                appendLog(cli.logDir, kComponentLogFile, componentLogHeader(), logRows);
+                std::cout << "Logged to " << cli.logDir << "/" << kComponentLogFile << "\n";
+            }
         }
 
         if (!cli.csvOut.empty())

@@ -20,6 +20,9 @@ std::string objectiveName(Objective objective);
 // The parameter columns come from the first row; an empty list gives just the header.
 std::string rankedCsv(const std::vector<Ranked>& ranked);
 
+// A csv field: quoted (with "" for a quote) when it holds a comma, a quote or a line break, else as it is.
+std::string csvField(const std::string& s);
+
 // Writes the text to a file, replacing it. Throws std::runtime_error if it cannot be written.
 void writeTextFile(const std::string& path, const std::string& text);
 
