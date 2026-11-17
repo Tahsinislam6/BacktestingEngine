@@ -281,3 +281,76 @@ TEST(PortfolioTest, ClosingOneAssetLeavesTheOtherOpen)
     ASSERT_EQ(p.openTrades().size(), 1u);
     EXPECT_EQ(p.openTrades()[0].asset, 1);
 }
+
+// ---------- moving a stop ----------
+
+TEST(PortfolioStopTest, OpenRecordsTheInitialStop)
+{
+    Portfolio p(10000.0);
+    p.open(Direction::Long, 1, 100, 1, 95.0, std::nullopt);
+    p.open(Direction::Long, 1, 100, 1);
+
+    ASSERT_TRUE(p.openTrades()[0].initialStop.has_value());
+    EXPECT_DOUBLE_EQ(*p.openTrades()[0].initialStop, 95.0);
+    EXPECT_EQ(p.openTrades()[0].stopReason, ExitReason::StopLoss);
+    EXPECT_FALSE(p.openTrades()[1].initialStop.has_value());
+}
+
+TEST(PortfolioStopTest, MoveStopChangesTheStopAndItsReasonButNotTheInitialStop)
+{
+    Portfolio p(10000.0);
+    const int id = p.open(Direction::Long, 1, 100, 1, 95.0, 110.0);
+
+    EXPECT_TRUE(p.moveStop(id, 100.0, ExitReason::Breakeven));
+
+    const Trade& t = p.openTrades()[0];
+    ASSERT_TRUE(t.stopLoss.has_value());
+    EXPECT_DOUBLE_EQ(*t.stopLoss, 100.0);
+    EXPECT_EQ(t.stopReason, ExitReason::Breakeven);
+    EXPECT_DOUBLE_EQ(*t.initialStop, 95.0);
+    EXPECT_DOUBLE_EQ(*t.takeProfit, 110.0);
+}
+
+TEST(PortfolioStopTest, MoveStopCanGiveAStopToATradeThatHadNone)
+{
+    Portfolio p(10000.0);
+    const int id = p.open(Direction::Short, 1, 100, 1);
+
+    EXPECT_TRUE(p.moveStop(id, 101.0, ExitReason::Trailing));
+
+    EXPECT_DOUBLE_EQ(*p.openTrades()[0].stopLoss, 101.0);
+    EXPECT_FALSE(p.openTrades()[0].initialStop.has_value());
+}
+
+TEST(PortfolioStopTest, MoveStopReturnsFalseForAnUnknownOrClosedId)
+{
+    Portfolio p(10000.0);
+    const int id = p.open(Direction::Long, 1, 100, 1, 95.0);
+    p.close(id, 101, 2, ExitReason::Signal);
+
+    EXPECT_FALSE(p.moveStop(id, 100.0, ExitReason::Breakeven));
+    EXPECT_FALSE(p.moveStop(99, 100.0, ExitReason::Breakeven));
+}
+
+TEST(PortfolioStopTest, MoveStopLeavesEquityAlone)
+{
+    Portfolio p(10000.0);
+    const int id = p.open(Direction::Long, 2, 100, 1, 95.0);
+    const double before = p.equity(104.0);
+
+    p.moveStop(id, 103.0, ExitReason::Trailing);
+
+    EXPECT_DOUBLE_EQ(p.equity(104.0), before);
+}
+
+TEST(PortfolioStopTest, AClosedTradeKeepsTheMovedStopAndTheInitialOne)
+{
+    Portfolio p(10000.0);
+    const int id = p.open(Direction::Long, 1, 100, 1, 95.0);
+    p.moveStop(id, 100.0, ExitReason::Breakeven);
+    p.close(id, 100.0, 2, ExitReason::Breakeven);
+
+    const Trade& t = p.closedTrades()[0].trade;
+    EXPECT_DOUBLE_EQ(*t.stopLoss, 100.0);
+    EXPECT_DOUBLE_EQ(*t.initialStop, 95.0);
+}

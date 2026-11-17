@@ -4,7 +4,10 @@
 
 #include "trade.hpp"
 
-enum class OrderType {Open, Close};
+// Open = a new trade; Close = close a trade at the close; MoveStop = give an open trade a new stop (from `stopLoss`),
+// to be recorded as `reason` when it is hit. A MoveStop is filled after the stops were checked, so the new stop first
+// applies on the next bar.
+enum class OrderType {Open, Close, MoveStop};
 
 struct Order
 {
@@ -16,7 +19,7 @@ struct Order
     std::optional<double> takeProfit;
 
     int tradeId{};
-    ExitReason reason{ExitReason::Signal};   // for a Close order: what the closed trade is recorded as
+    ExitReason reason{ExitReason::Signal};   // Close: what the closed trade is recorded as; MoveStop: what a hit of the new stop is
 };
 
 inline Order openOrder(Direction d, double qty,
@@ -39,6 +42,17 @@ inline Order closeOrder(int tradeId, ExitReason reason = ExitReason::Signal)
     Order o;
     o.type = OrderType::Close;
     o.tradeId = tradeId;
+    o.reason = reason;
+    return o;
+}
+
+// Move the stop of trade `tradeId` to `price`; a hit of it is recorded as `reason`.
+inline Order moveStopOrder(int tradeId, double price, ExitReason reason = ExitReason::StopLoss)
+{
+    Order o;
+    o.type = OrderType::MoveStop;
+    o.tradeId = tradeId;
+    o.stopLoss = price;
     o.reason = reason;
     return o;
 }

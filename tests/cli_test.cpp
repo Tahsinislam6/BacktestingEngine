@@ -474,3 +474,119 @@ TEST(CliTest, TheNoteNeedsTheLogFolder)
 {
     EXPECT_THROW(parse(with({"--screen", "--outsample", "data/out", "--note", "why"})), std::invalid_argument);
 }
+
+TEST(CliTest, TheEntryStudyIsOffByDefault)
+{
+    EXPECT_EQ(parse(base()).entryStudy, 0);
+}
+
+TEST(CliTest, ReadsTheEntryStudyRunCount)
+{
+    EXPECT_EQ(parse(with({"--mode", "nnfx", "--entry-study", "300"})).entryStudy, 300);
+}
+
+TEST(CliTest, TheEntryStudyNeedsNnfxMode)
+{
+    EXPECT_THROW(parse(with({"--entry-study", "100"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--mode", "flip", "--entry-study", "100"})), std::invalid_argument);
+}
+
+TEST(CliTest, TheEntryStudyCannotBeCombinedWithTheScreen)
+{
+    EXPECT_THROW(parse(with({"--screen", "--outsample", "data/out", "--entry-study", "100"})), std::invalid_argument);
+}
+
+TEST(CliTest, TheEntryStudyCountMustBeAWholeNumber)
+{
+    EXPECT_THROW(parse(with({"--mode", "nnfx", "--entry-study", "many"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--mode", "nnfx", "--entry-study"})), std::invalid_argument);
+}
+
+TEST(CliTest, TheEntryStudyCanBeLogged)
+{
+    EXPECT_NO_THROW(parse(with({"--mode", "nnfx", "--entry-study", "100", "--log-dir", "results"})));
+}
+
+TEST(CliTest, TheEntryControlIsOffByDefault)
+{
+    EXPECT_EQ(parse(base()).entryControl, 0);
+}
+
+TEST(CliTest, ReadsTheEntryControlCount)
+{
+    EXPECT_EQ(parse(with({"--mode", "nnfx", "--confirm", "rsi", "--entry-control", "200"})).entryControl, 200);
+}
+
+TEST(CliTest, TheEntryControlNeedsNnfxModeAndAConfirmationOrAFilter)
+{
+    EXPECT_THROW(parse(with({"--confirm", "rsi", "--entry-control", "100"})), std::invalid_argument);                 // flip mode
+    EXPECT_THROW(parse(with({"--mode", "nnfx", "--entry-control", "100"})), std::invalid_argument);                  // nothing to control
+    EXPECT_THROW(parse(with({"--mode", "nnfx", "--exit-indicator", "rsi", "--entry-control", "100"})), std::invalid_argument);   // an exit is not an entry
+    EXPECT_NO_THROW(parse(with({"--mode", "nnfx", "--filter", "atr_expansion", "--entry-control", "100"})));
+}
+
+TEST(CliTest, TheEntryControlCannotBeCombinedWithTheScreen)
+{
+    EXPECT_THROW(parse(with({"--screen", "--outsample", "data/out", "--confirm", "rsi", "--entry-control", "100"})),
+                 std::invalid_argument);
+}
+
+TEST(CliTest, TheEntryControlCountMustBeAWholeNumber)
+{
+    EXPECT_THROW(parse(with({"--mode", "nnfx", "--confirm", "rsi", "--entry-control", "lots"})), std::invalid_argument);
+}
+
+TEST(CliTest, TheEntryControlCanBeLogged)
+{
+    EXPECT_NO_THROW(parse(with({"--mode", "nnfx", "--confirm", "rsi", "--entry-control", "100", "--log-dir", "results"})));
+}
+
+// ---------- --signal: the entry study of a signal that is not a baseline ----------
+
+TEST(CliTest, TheSignalIsOffByDefault)
+{
+    const CliOptions o = parse(base());
+    EXPECT_TRUE(o.signalKind.empty());
+    EXPECT_EQ(o.signalLookback, 0);
+}
+
+TEST(CliTest, ReadsTheSignalKindAndLookback)
+{
+    CliOptions o = parse(with({"--signal", "breakout:20", "--entry-study", "500"}));
+    EXPECT_EQ(o.signalKind, "breakout");
+    EXPECT_EQ(o.signalLookback, 20);
+    o = parse(with({"--signal", "momentum:60", "--entry-study", "500"}));
+    EXPECT_EQ(o.signalKind, "momentum");
+    EXPECT_EQ(o.signalLookback, 60);
+}
+
+TEST(CliTest, ABadSignalIsRefused)
+{
+    for (const char* bad : {"cross:20", "trend:20", "breakout", "breakout:", ":20", "breakout:x", "breakout:0", "breakout:-5", "breakout:2.5"})
+        EXPECT_THROW(parse(with({"--signal", bad, "--entry-study", "100"})), std::invalid_argument) << bad;
+}
+
+TEST(CliTest, TheSignalNeedsTheEntryStudy)
+{
+    EXPECT_THROW(parse(with({"--signal", "breakout:20"})), std::invalid_argument);
+}
+
+TEST(CliTest, TheSignalHasNoBaselineModeOrOtherControls)
+{
+    for (const std::vector<std::string>& extra : std::vector<std::vector<std::string>>{
+             {"--baseline", "sma"}, {"--mode", "nnfx"}, {"--control", "10", "--no-cross-exit"}, {"--component-control", "10", "--confirm", "rsi"},
+             {"--entry-control", "10", "--confirm", "rsi"}})
+    {
+        std::vector<std::string> args = {"--signal", "breakout:20", "--entry-study", "100"};
+        args.insert(args.end(), extra.begin(), extra.end());
+        EXPECT_THROW(parse(with(args)), std::invalid_argument) << extra.front();
+    }
+    EXPECT_THROW(parse(with({"--screen", "--outsample", "data/out", "--signal", "breakout:20", "--entry-study", "100"})),
+                 std::invalid_argument);
+}
+
+TEST(CliTest, TheSignalStudyAcceptsComponentsAnOutsampleAndALog)
+{
+    EXPECT_NO_THROW(parse(with({"--signal", "momentum:60", "--entry-study", "100", "--confirm", "rsi", "--outsample", "data/out",
+                                "--log-dir", "results"})));
+}

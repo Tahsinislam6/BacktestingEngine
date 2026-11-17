@@ -5,6 +5,11 @@
 
 enum class Direction {Long, Short};
 
+// Why a trade ended. StopLoss / TakeProfit = a stop or target order was hit; Signal = closed by the strategy (e.g. the
+// baseline crossed back); Breakeven / Trailing = a moved stop was hit (or the strategy closed the runner at the close
+// because the stop could not be placed on the right side of the price); Indicator = an exit indicator turned against it.
+enum class ExitReason {Signal, StopLoss, TakeProfit, Breakeven, Trailing, Indicator};
+
 struct Trade
 {
     int id{};
@@ -13,14 +18,11 @@ struct Trade
     double quantity{};
     double entryPrice{};
     std::int64_t entryTime{};
-    std::optional<double> stopLoss;
+    std::optional<double> stopLoss;             // the stop now; a strategy can move it (OrderType::MoveStop)
     std::optional<double> takeProfit;
+    std::optional<double> initialStop;          // the stop the trade was opened with; never changes (R is measured from it)
+    ExitReason stopReason{ExitReason::StopLoss};   // what a hit of `stopLoss` is recorded as
 };
-
-// Signal = closed by the strategy (e.g. the baseline crossed back); Breakeven = the strategy closed a runner
-// that came back to its entry after the target half was taken; Trailing = the strategy closed a runner whose
-// close fell back from its best by a multiple of the ATR; Indicator = an exit indicator turned against the trade.
-enum class ExitReason {Signal, StopLoss, TakeProfit, Breakeven, Trailing, Indicator};
 
 struct ClosedTrade
 {

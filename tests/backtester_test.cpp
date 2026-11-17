@@ -482,3 +482,31 @@ TEST(BacktesterTest, StopLossPnlIsInFinalEquity)
 
     EXPECT_DOUBLE_EQ(r.finalEquity, kCash - 10.0);   // 2 * (95 - 100), later price is irrelevant
 }
+
+// ---------- moving a stop ----------
+
+TEST(BacktesterTest, AMoveStopOrderMovesTheStopAndDoesNotCloseTheTrade)
+{
+    ScriptedStrategy strategy({{openOrder(Direction::Long, 90.0)}, {moveStopOrder(1, 100.0, ExitReason::Breakeven)}});
+    const BarSeries series = makeSeries({flatBar(1, 100), makeBar(2, 100, 103, 99.8, 102), makeBar(3, 101, 101.5, 99.5, 100.2)});
+
+    const BacktestResult r = runBacktest(series, strategy, 10000.0);
+
+    ASSERT_EQ(r.closedTrades.size(), 1u);
+    EXPECT_EQ(r.closedTrades[0].reason, ExitReason::Breakeven);
+    EXPECT_DOUBLE_EQ(r.closedTrades[0].exitPrice, 100.0);
+    ASSERT_GE(strategy.openCounts.size(), 3u);
+    EXPECT_EQ(strategy.openCounts[2], 0u);          // closed by the stop before the strategy ran on bar 3
+}
+
+TEST(BacktesterTest, TheTradeStaysOpenAfterTheBarWhereItsStopWasMoved)
+{
+    ScriptedStrategy strategy({{openOrder(Direction::Long, 90.0)}, {moveStopOrder(1, 99.0, ExitReason::Trailing)}});
+    const BarSeries series = makeSeries({flatBar(1, 100), makeBar(2, 100, 103, 95, 102)});
+
+    const BacktestResult r = runBacktest(series, strategy, 10000.0);
+
+    EXPECT_TRUE(r.closedTrades.empty());
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_DOUBLE_EQ(*r.openTrades[0].stopLoss, 99.0);
+}

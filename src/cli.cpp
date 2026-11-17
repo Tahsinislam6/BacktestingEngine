@@ -124,6 +124,20 @@ CliOptions parseArgs(const std::vector<std::string>& args)
             if (!(o.trainFraction > 0.0 && o.trainFraction < 1.0))
                 throw std::invalid_argument("--train-fraction must be between 0 and 1");
         }
+        else if (flag == "--entry-control")  { o.entryControl = static_cast<int>(toWholeNumber(flag, value(), 0)); nnfxOnly = true; }
+        else if (flag == "--signal")
+        {
+            const std::string& text = value();
+            const std::size_t colon = text.find(':');
+            if (colon == std::string::npos)
+                throw std::invalid_argument("--signal needs kind:lookback, e.g. breakout:20 or momentum:60, got '" + text + "'");
+            const std::string kind = text.substr(0, colon);
+            if (kind != "breakout" && kind != "momentum")
+                throw std::invalid_argument("--signal kind must be breakout or momentum, got '" + kind + "'");
+            o.signalKind = kind;
+            o.signalLookback = static_cast<int>(toWholeNumber(flag, text.substr(colon + 1), 1));
+        }
+        else if (flag == "--entry-study")    { o.entryStudy = static_cast<int>(toWholeNumber(flag, value(), 0)); nnfxOnly = true; }
         else if (flag == "--component-control") { o.componentControl = static_cast<int>(toWholeNumber(flag, value(), 0)); nnfxOnly = true; }
         else if (flag == "--confirm")        { o.confirm = value(); nnfxOnly = true; }
         else if (flag == "--exit-indicator") { o.exitIndicator = value(); nnfxOnly = true; }
@@ -180,13 +194,28 @@ CliOptions parseArgs(const std::vector<std::string>& args)
         if (baselineGiven || modeGiven)
             throw std::invalid_argument("--screen runs every baseline in nnfx mode; do not combine it with --baseline or --mode");
     }
-    if (!o.screen && nnfxOnly && o.mode != Mode::Nnfx)
+    if (!o.signalKind.empty())
+    {
+        if (o.entryStudy == 0)
+            throw std::invalid_argument("--signal needs --entry-study <runs> (the signal study is the entry study)");
+        if (o.screen || baselineGiven || modeGiven || o.control > 0 || o.componentControl > 0 || o.entryControl > 0)
+            throw std::invalid_argument("--signal has no baseline or trading mode: do not combine it with --baseline, --mode, "
+                                        "--screen, --control, --component-control or --entry-control");
+    }
+    if (!o.screen && o.signalKind.empty() && nnfxOnly && o.mode != Mode::Nnfx)
         throw std::invalid_argument("--confirm, --exit-indicator, --filter, --confirm-window, --one-candle, --continuation, "
-                                    "--max-open-risk and --max-per-currency only apply with --mode nnfx (or --screen)");
+                                    "--max-open-risk, --max-per-currency, --entry-study and --entry-control only apply with --mode nnfx (or --screen)");
     if (!o.note.empty() && o.logDir.empty())
         throw std::invalid_argument("--note needs --log-dir (it is written into the log rows)");
-    if (!o.logDir.empty() && !o.screen && o.control == 0 && o.componentControl == 0)
-        throw std::invalid_argument("--log-dir needs --screen, --control or --component-control (only those results are logged)");
+    if (!o.logDir.empty() && !o.screen && o.control == 0 && o.componentControl == 0 && o.entryStudy == 0 && o.entryControl == 0)
+        throw std::invalid_argument("--log-dir needs --screen, --control, --component-control, --entry-study or --entry-control "
+                                    "(only those results are logged)");
+    if (o.entryControl > 0 && o.screen)
+        throw std::invalid_argument("--entry-control cannot be combined with --screen");
+    if (o.entryControl > 0 && o.confirm.empty() && o.filter.empty())
+        throw std::invalid_argument("--entry-control needs --confirm or --filter to control (an exit indicator does not pick entries)");
+    if (o.entryStudy > 0 && o.screen)
+        throw std::invalid_argument("--entry-study cannot be combined with --screen");
     if (o.componentControl > 0 && o.screen)
         throw std::invalid_argument("--component-control cannot be combined with --screen");
     if (o.componentControl > 0 && o.confirm.empty() && o.exitIndicator.empty() && o.filter.empty())
@@ -226,8 +255,14 @@ std::string usage()
         "  --continuation           nnfx: re-enter while price stays on the same side of the baseline\n"
         "  --max-open-risk <x>      nnfx: cap on the total risk of open signals as a share of equity (0.06 = 6%)\n"
         "  --max-per-currency <n>   nnfx: cap on net signals per currency (long EURUSD and GBPUSD both short USD)\n"
+        "  --entry-study <n>        nnfx: what price does after the winner's signals (1-40 bars, target/stop race, excursions),\n"
+        "                           in ATR, against n random-direction runs; before any stops, targets or sizing\n"
+        "  --signal <kind:n>        entry study of a breakout (n-bar high/low) or momentum (n-bar return flips) signal instead of a\n"
+        "                           baseline: nothing is tuned, so in-sample and out-of-sample are both fair tests; needs --entry-study\n"
+        "  --entry-control <n>      nnfx: does the chosen --confirm / --filter pick better entries than n random components that\n"
+        "                           behave the same? Measured on the entry study (no stops or sizing)\n"
         "  --component-control <n>  nnfx: compare each chosen component with n random ones that behave the same\n"
-        "  --log-dir <folder>       append every screen / control result to the csv logs in this folder (one file per test type)\n"
+        "  --log-dir <folder>       append every screen / control / entry-study result to the csv logs in this folder (one file per test type)\n"
         "  --note <text>            with --log-dir: why this test was run (kept in the log rows)\n"
         "  --no-cross-exit          nnfx: do not close when the baseline crosses back (stop, target, breakeven only)\n"
         "  --control <n>            nnfx: compare the winner's direction with n random-direction runs (needs --no-cross-exit)\n"

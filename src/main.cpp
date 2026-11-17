@@ -8,6 +8,7 @@
 #include "control.hpp"
 #include "costs.hpp"
 #include "dataset.hpp"
+#include "entry_study.hpp"
 #include "nnfx_setup.hpp"
 #include "result_log.hpp"
 #include "screen.hpp"
@@ -27,8 +28,9 @@ int main(int argc, char** argv)
             return 0;
         }
 
-        const BaselineInfo* baseline = cli.screen ? nullptr : findBaseline(cli.baseline);
-        if (!cli.screen && !baseline)
+        const bool signalOnly = !cli.signalKind.empty();
+        const BaselineInfo* baseline = cli.screen || signalOnly ? nullptr : findBaseline(cli.baseline);
+        if (!cli.screen && !signalOnly && !baseline)
             throw std::invalid_argument("unknown baseline '" + cli.baseline + "' (available: " + baselineNames() + ")");
 
         const NnfxOptions nnfx = makeNnfxOptions(cli);
@@ -58,6 +60,39 @@ int main(int argc, char** argv)
 
         const AlignedData inSample = loadFolder(cli.inSampleDir, !cli.keepSundays);
         const LogContext logContext = makeLogContext(cli, std::time(nullptr));
+
+        if (signalOnly)
+        {
+            EntryStudyOptions entry;
+            entry.atrPeriod = nnfx.atrPeriod;
+            entry.stopAtr = nnfx.entry.stopAtr;
+            entry.targetAtr = nnfx.entry.takeProfitAtr;
+            entry.components = nnfx.components;
+            entry.confirmationWindow = nnfx.confirmationWindow;
+            entry.kind = cli.signalKind == "breakout" ? SignalKind::Breakout : SignalKind::Momentum;
+            entry.lookback = cli.signalLookback;
+            const CostModel& costs = study.validation.optimise.grid.costs;
+            const std::string paramText = "lookback=" + std::to_string(cli.signalLookback);
+
+            std::cout << "SIGNAL STUDY " << cli.signalKind << ":" << cli.signalLookback
+                      << " (nothing is tuned, so the in-sample and the out-of-sample results are both fair tests)\n\n";
+            std::vector<std::string> logRows;
+            const auto run = [&](const char* label, const AlignedData& data)
+            {
+                const EntryStudyResult r = runSignalStudy(data, entry, cli.entryStudy, spreadsFor(costs, data.symbols));
+                std::cout << formatEntryStudy(label, r) << "\n";
+                logRows.push_back(entryStudyLogRow(logContext, cli.signalKind, paramText, label, cli.entryStudy, r));
+            };
+            run("in-sample", inSample);
+            if (!cli.outSampleDir.empty())
+                run("out-of-sample", loadFolder(cli.outSampleDir, !cli.keepSundays));
+            if (!cli.logDir.empty())
+            {
+                appendLog(cli.logDir, kEntryStudyLogFile, entryStudyLogHeader(), logRows);
+                std::cout << "Logged to " << cli.logDir << "/" << kEntryStudyLogFile << "\n";
+            }
+            return 0;
+        }
 
         if (cli.screen)
         {
@@ -130,6 +165,74 @@ int main(int argc, char** argv)
             {
                 appendLog(cli.logDir, kDirectionLogFile, directionLogHeader(), logRows);
                 std::cout << "Logged to " << cli.logDir << "/" << kDirectionLogFile << "\n";
+            }
+        }
+
+        if (cli.entryStudy > 0 && !result.ranking.empty())
+        {
+            const Params& winner = result.ranking[0].evaluation.params;
+            const CostModel& costs = study.validation.optimise.grid.costs;
+            EntryStudyOptions entry;
+            entry.atrPeriod = nnfx.atrPeriod;
+            entry.maxDistanceAtr = nnfx.maxDistanceAtr;
+            entry.stopAtr = nnfx.entry.stopAtr;
+            entry.targetAtr = nnfx.entry.takeProfitAtr;
+            entry.components = nnfx.components;
+            entry.confirmationWindow = nnfx.confirmationWindow;
+            std::cout << "\nENTRY STUDY (winner " << paramsText(winner) << "; the winner was tuned on the in-sample data, "
+                         "so only the out-of-sample table is a fair test)\n";
+            std::vector<std::string> logRows;
+            const auto run = [&](const char* label, const AlignedData& data)
+            {
+                const EntryStudyResult r = runEntryStudy(data, *baseline, winner, entry, cli.entryStudy, spreadsFor(costs, data.symbols));
+                std::cout << formatEntryStudy(label, r);
+                logRows.push_back(entryStudyLogRow(logContext, baseline->name, paramsText(winner), label, cli.entryStudy, r));
+            };
+            run("in-sample", inSample);
+            if (!cli.outSampleDir.empty())
+                run("out-of-sample", outOfSample);
+            if (!cli.logDir.empty())
+            {
+                appendLog(cli.logDir, kEntryStudyLogFile, entryStudyLogHeader(), logRows);
+                std::cout << "Logged to " << cli.logDir << "/" << kEntryStudyLogFile << "\n";
+            }
+        }
+
+        if (cli.entryControl > 0 && !result.ranking.empty())
+        {
+            const Params& winner = result.ranking[0].evaluation.params;
+            const CostModel& costs = study.validation.optimise.grid.costs;
+            EntryStudyOptions entry;
+            entry.atrPeriod = nnfx.atrPeriod;
+            entry.maxDistanceAtr = nnfx.maxDistanceAtr;
+            entry.stopAtr = nnfx.entry.stopAtr;
+            entry.targetAtr = nnfx.entry.takeProfitAtr;
+            entry.components = nnfx.components;
+            entry.confirmationWindow = nnfx.confirmationWindow;
+            std::cout << "\nENTRY CONTROL (winner " << paramsText(winner) << "; the winner was tuned on the in-sample data "
+                         "with these components, so only the out-of-sample tables are a fair test)\n";
+            std::vector<std::string> logRows;
+            struct Role { ComponentRole role; const std::string& name; };
+            for (const Role& r : {Role{ComponentRole::Confirmation, cli.confirm}, Role{ComponentRole::Filter, cli.filter}})
+            {
+                if (r.name.empty())
+                    continue;
+                const auto run = [&](const char* label, const AlignedData& data)
+                {
+                    const EntryControlResult control = runEntryComponentControl(data, *baseline, winner, entry, r.role,
+                                                           cli.entryControl, spreadsFor(costs, data.symbols));
+                    std::cout << formatEntryControl(label, r.name, r.role, control);
+                    logRows.push_back(entryControlLogRow(logContext, baseline->name, paramsText(winner), r.role, r.name, label,
+                                                         cli.entryControl, control));
+                };
+                run("in-sample", inSample);
+                if (!cli.outSampleDir.empty())
+                    run("out-of-sample", outOfSample);
+            }
+            if (!cli.logDir.empty())
+            {
+                appendLog(cli.logDir, kEntryControlLogFile, entryControlLogHeader(), logRows);
+                std::cout << "Logged to " << cli.logDir << "/" << kEntryControlLogFile << "\n";
             }
         }
 

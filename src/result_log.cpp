@@ -75,6 +75,10 @@ std::string setupText(const CliOptions& cli)
         s += " max-open-risk=" + num(*cli.maxOpenRisk);
     if (cli.maxPerCurrency)
         s += " max-per-currency=" + std::to_string(*cli.maxPerCurrency);
+    // Breakeven and trailing exits are real stop orders (they fill at the stop, not at a later close). Log rows from
+    // before that change have no such marker.
+    if (cli.mode == Mode::Nnfx || cli.screen)
+        s += " stops=orders";
     return s + " objective=" + objectiveName(cli.objective) + " min-trades=" + std::to_string(cli.minTrades);
 }
 
@@ -177,4 +181,81 @@ std::string componentLogRow(const LogContext& context, const std::string& baseli
            + csvField(component) + "," + csvField(data) + "," + std::to_string(runs) + "," + armFields(result.real) + ","
            + armFields(result.without) + "," + num(meanExpectancy(result.random)) + "," + num(result.sharpeRank) + ","
            + num(result.expectancyRank) + "," + num(result.totalRRank) + "," + csvField(result.behaviour) + "\n";
+}
+
+std::string entryStudyLogHeader()
+{
+    std::string h = std::string(contextColumns()) + ",baseline,params,data,random_runs,events";
+    for (int hz : entryHorizons())
+    {
+        const std::string p = ",h" + std::to_string(hz) + "_";
+        h += p + "mean_atr" + p + "net_atr" + p + "beats";
+    }
+    return h + ",target_first,stop_first,neither,random_target_first,target_beats,race_r,random_race_r,"
+               "mfe_atr,mae_atr,random_mfe_atr,random_mae_atr,excursion_beats\n";
+}
+
+std::string entryStudyLogRow(const LogContext& context, const std::string& baseline, const std::string& params,
+                             const std::string& data, int runs, const EntryStudyResult& result)
+{
+    std::string row = contextFields(context) + "," + csvField(baseline) + "," + csvField(params) + "," + csvField(data) +
+                      "," + std::to_string(runs) + "," + std::to_string(result.events);
+    for (const HorizonResult& h : result.horizons)
+        row += "," + num(h.meanAtr) + "," + num(h.netMeanAtr) + "," + num(h.beats);
+    for (double v : {result.targetFirst, result.stopFirst, result.neither, result.randomTargetFirst, result.targetBeats,
+                     result.raceR, result.randomRaceR, result.mfeAtr, result.maeAtr, result.randomMfeAtr,
+                     result.randomMaeAtr, result.excursionBeats})
+        row += "," + num(v);
+    return row + "\n";
+}
+
+std::string entryControlLogHeader()
+{
+    std::string h = std::string(contextColumns()) +
+                    ",baseline,params,role,component,data,random_runs,with_events,without_events,random_mean_events";
+    for (int hz : entryHorizons())
+    {
+        const std::string p = ",h" + std::to_string(hz) + "_";
+        h += p + "with" + p + "without" + p + "random" + p + "beats";
+    }
+    return h + ",race_with,race_without,race_random,race_beats,balance_with,balance_without,balance_random,balance_beats,"
+               "behaviour\n";
+}
+
+std::string entryControlLogRow(const LogContext& context, const std::string& baseline, const std::string& params,
+                               ComponentRole role, const std::string& component, const std::string& data, int runs,
+                               const EntryControlResult& result)
+{
+    auto finiteMean = [](const std::vector<double>& v)
+    {
+        double sum = 0;
+        int n = 0;
+        for (double x : v)
+            if (std::isfinite(x)) { sum += x; ++n; }
+        return n > 0 ? sum / n : std::nan("");
+    };
+    auto column = [&](auto member)
+    {
+        std::vector<double> out;
+        for (const EntryArm& a : result.random)
+            out.push_back(member(a));
+        return out;
+    };
+
+    std::vector<double> events;
+    for (const EntryArm& a : result.random)
+        events.push_back(a.events);
+
+    std::string row = contextFields(context) + "," + csvField(baseline) + "," + csvField(params) + "," + roleName(role) + "," +
+                      csvField(component) + "," + csvField(data) + "," + std::to_string(runs) + "," +
+                      std::to_string(result.real.events) + "," + std::to_string(result.without.events) + "," +
+                      num(finiteMean(events));
+    for (std::size_t h = 0; h < result.real.meanAtr.size(); ++h)
+        row += "," + num(result.real.meanAtr[h]) + "," + num(result.without.meanAtr[h]) + "," +
+               num(finiteMean(column([h](const EntryArm& a) { return a.meanAtr[h]; }))) + "," + num(result.meanBeats[h]);
+    row += "," + num(result.real.raceR) + "," + num(result.without.raceR) + "," +
+           num(finiteMean(column([](const EntryArm& a) { return a.raceR; }))) + "," + num(result.raceBeats);
+    row += "," + num(result.real.balance) + "," + num(result.without.balance) + "," +
+           num(finiteMean(column([](const EntryArm& a) { return a.balance; }))) + "," + num(result.balanceBeats);
+    return row + "," + csvField(result.behaviour) + "\n";
 }

@@ -912,6 +912,133 @@ TEST(CloseReasonTest, ADefaultCloseOrderIsASignalExit)
     EXPECT_EQ(runMultiBacktest(d, s, kCash).closedTrades[0].reason, ExitReason::Signal);
 }
 
+// ---------- moving a stop ----------
+//   A MoveStop order sets a new stop on an open trade (and the reason a hit of it is recorded as). It is filled
+//   after the stops were checked, so the new stop is first tested on the NEXT snapshot, with the usual rules:
+//   a long is stopped when the low reaches it, at the stop price or at the open if the bar gaps through it.
+
+TEST(MoveStopTest, TheMovedStopIsTheOneThatIsHit)
+{
+    const AlignedData d = makeData(1, {snap(1, {flatBar(1, 100)}), snap(2, {makeBar(2, 100, 103, 99.8, 102)}),
+                                       snap(3, {makeBar(3, 101, 101.5, 99.5, 100.2)})});
+    ScriptedMulti s({{openOrder(Direction::Long, 1, 90.0, std::nullopt, 0)}, {moveStopOrder(1, 100.0, ExitReason::Breakeven)}});
+
+    const BacktestResult r = runMultiBacktest(d, s, kCash);
+
+    ASSERT_EQ(r.closedTrades.size(), 1u);
+    const ClosedTrade& c = r.closedTrades[0];
+    EXPECT_EQ(c.reason, ExitReason::Breakeven);
+    EXPECT_DOUBLE_EQ(c.exitPrice, 100.0);
+    EXPECT_EQ(c.exitTime, 3);
+    EXPECT_DOUBLE_EQ(c.pnl, 0.0);
+    EXPECT_DOUBLE_EQ(*c.trade.stopLoss, 100.0);
+    EXPECT_DOUBLE_EQ(*c.trade.initialStop, 90.0);
+}
+
+TEST(MoveStopTest, AGapThroughTheMovedStopFillsAtTheOpen)
+{
+    const AlignedData d = makeData(1, {snap(1, {flatBar(1, 100)}), snap(2, {makeBar(2, 100, 103, 99.8, 102)}),
+                                       snap(3, {makeBar(3, 98, 99, 97, 98.5)})});
+    ScriptedMulti s({{openOrder(Direction::Long, 1, 90.0, std::nullopt, 0)}, {moveStopOrder(1, 100.0, ExitReason::Trailing)}});
+
+    const BacktestResult r = runMultiBacktest(d, s, kCash);
+
+    ASSERT_EQ(r.closedTrades.size(), 1u);
+    EXPECT_EQ(r.closedTrades[0].reason, ExitReason::Trailing);
+    EXPECT_DOUBLE_EQ(r.closedTrades[0].exitPrice, 98.0);
+}
+
+TEST(MoveStopTest, AShortStopMovesDownAndIsHitFromBelow)
+{
+    const AlignedData d = makeData(1, {snap(1, {flatBar(1, 100)}), snap(2, {makeBar(2, 100, 100.5, 97, 98)}),
+                                       snap(3, {makeBar(3, 99, 100.5, 98.5, 99.5)})});
+    ScriptedMulti s({{openOrder(Direction::Short, 1, 110.0, std::nullopt, 0)}, {moveStopOrder(1, 100.0, ExitReason::Trailing)}});
+
+    const BacktestResult r = runMultiBacktest(d, s, kCash);
+
+    ASSERT_EQ(r.closedTrades.size(), 1u);
+    EXPECT_EQ(r.closedTrades[0].reason, ExitReason::Trailing);
+    EXPECT_DOUBLE_EQ(r.closedTrades[0].exitPrice, 100.0);       // the stop, not the gap-free bar's high of 100.5
+}
+
+TEST(MoveStopTest, TheOldStopNoLongerApplies)
+{
+    // the stop starts at 90 and is moved up to 100; a bar that trades down to 95 hits the new stop, not nothing
+    const AlignedData d = makeData(1, {snap(1, {flatBar(1, 100)}), snap(2, {makeBar(2, 100, 103, 99.8, 102)}),
+                                       snap(3, {makeBar(3, 101, 101, 95, 96)})});
+    ScriptedMulti s({{openOrder(Direction::Long, 1, 90.0, std::nullopt, 0)}, {moveStopOrder(1, 100.0, ExitReason::Breakeven)}});
+
+    const BacktestResult r = runMultiBacktest(d, s, kCash);
+
+    ASSERT_EQ(r.closedTrades.size(), 1u);
+    EXPECT_DOUBLE_EQ(r.closedTrades[0].exitPrice, 100.0);
+}
+
+TEST(MoveStopTest, AMovedStopIsNotCheckedOnTheSnapshotItWasMovedIn)
+{
+    // snapshot 2's bar already traded down to 95, below the stop of 99 that is set at its close: the trade stays open;
+    // the next bar stays above 99, so it still stays
+    const AlignedData d = makeData(1, {snap(1, {flatBar(1, 100)}), snap(2, {makeBar(2, 100, 103, 95, 102)}),
+                                       snap(3, {makeBar(3, 101, 103, 100, 102)})});
+    ScriptedMulti s({{openOrder(Direction::Long, 1, 90.0, std::nullopt, 0)}, {moveStopOrder(1, 99.0, ExitReason::Trailing)}});
+
+    const BacktestResult r = runMultiBacktest(d, s, kCash);
+
+    EXPECT_TRUE(r.closedTrades.empty());
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_DOUBLE_EQ(*r.openTrades[0].stopLoss, 99.0);
+}
+
+TEST(MoveStopTest, TheExitOfAMovedStopPaysHalfTheSpread)
+{
+    // long from 100 (fills 101 with a spread of 2); the stop moved to 100 is hit and sells at 100 - 1
+    const AlignedData d = makeData(1, {snap(1, {flatBar(1, 100)}), snap(2, {makeBar(2, 101, 103, 100.5, 102)}),
+                                       snap(3, {makeBar(3, 101, 101, 99.5, 100)})});
+    ScriptedMulti s({{openOrder(Direction::Long, 1, 90.0, std::nullopt, 0)}, {moveStopOrder(1, 100.0, ExitReason::Breakeven)}});
+
+    const BacktestResult r = runMultiBacktest(d, s, kCash, {2.0});
+
+    ASSERT_EQ(r.closedTrades.size(), 1u);
+    EXPECT_DOUBLE_EQ(r.closedTrades[0].exitPrice, 99.0);
+}
+
+TEST(MoveStopTest, AnUnknownIdIsIgnored)
+{
+    const AlignedData d = makeData(1, {snap(1, {flatBar(1, 100)}), snap(2, {flatBar(2, 100)})});
+    ScriptedMulti s({{openOrder(Direction::Long, 1, 90.0, std::nullopt, 0)}, {moveStopOrder(99, 100.0, ExitReason::Breakeven)}});
+
+    const BacktestResult r = runMultiBacktest(d, s, kCash);
+
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_DOUBLE_EQ(*r.openTrades[0].stopLoss, 90.0);
+}
+
+TEST(MoveStopTest, TheTargetOfTheTradeIsUntouched)
+{
+    const AlignedData d = makeData(1, {snap(1, {flatBar(1, 100)}), snap(2, {makeBar(2, 100, 101, 99.8, 100.5)}),
+                                       snap(3, {makeBar(3, 100.5, 106, 100.2, 105)})});
+    ScriptedMulti s({{openOrder(Direction::Long, 1, 90.0, 105.0, 0)}, {moveStopOrder(1, 100.0, ExitReason::Breakeven)}});
+
+    const BacktestResult r = runMultiBacktest(d, s, kCash);
+
+    ASSERT_EQ(r.closedTrades.size(), 1u);
+    EXPECT_EQ(r.closedTrades[0].reason, ExitReason::TakeProfit);
+    EXPECT_DOUBLE_EQ(r.closedTrades[0].exitPrice, 105.0);
+}
+
+TEST(MoveStopTest, ACloseOrderAfterAMoveStillUsesItsOwnReason)
+{
+    const AlignedData d = makeData(1, {snap(1, {flatBar(1, 100)}), snap(2, {flatBar(2, 101)}), snap(3, {flatBar(3, 102)})});
+    ScriptedMulti s({{openOrder(Direction::Long, 1, 90.0, std::nullopt, 0)}, {moveStopOrder(1, 100.0, ExitReason::Breakeven)},
+                     {closeOrder(1, ExitReason::Signal)}});
+
+    const BacktestResult r = runMultiBacktest(d, s, kCash);
+
+    ASSERT_EQ(r.closedTrades.size(), 1u);
+    EXPECT_EQ(r.closedTrades[0].reason, ExitReason::Signal);
+    EXPECT_DOUBLE_EQ(r.closedTrades[0].exitPrice, 102.0);
+}
+
 // ---------- asset names ----------
 
 TEST(SetSymbolsTest, TheStrategyIsToldTheAssetNamesBeforeTheFirstSnapshot)

@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdio>
 #include <stdexcept>
+#include <utility>
 
 namespace
 {
@@ -17,37 +18,11 @@ namespace
     std::string num(double v, const char* format = "%.2f") { return std::isnan(v) ? "nan" : fmt(format, v); }
     std::string pct(double f) { return std::isnan(f) ? "n/a" : fmt("%.0f%%", 100.0 * f); }
 
-    bool has(const NnfxOptions& o, ComponentRole role)
+    NnfxOptions withComponents(NnfxOptions o, NnfxComponents c)
     {
-        switch (role)
-        {
-            case ComponentRole::Confirmation: return static_cast<bool>(o.components.confirmation);
-            case ComponentRole::ExitIndicator: return static_cast<bool>(o.components.exitIndicator);
-            case ComponentRole::Filter: return static_cast<bool>(o.components.filter);
-        }
-        return false;
-    }
-
-    // the options with this role's component removed
-    NnfxOptions without(NnfxOptions o, ComponentRole role)
-    {
-        switch (role)
-        {
-            case ComponentRole::Confirmation: o.components.confirmation.reset(); break;
-            case ComponentRole::ExitIndicator: o.components.exitIndicator.reset(); break;
-            case ComponentRole::Filter: o.components.filter.reset(); break;
-        }
+        o.components = std::move(c);
         return o;
     }
-
-    // what the stand-ins will copy, and a builder for one stand-in of a given seed
-    struct Stand
-    {
-        ChainStats stats;
-        std::size_t warmup{};
-        bool isGate{false};
-        std::string behaviour;
-    };
 
     std::string describe(const ChainStats& s, bool isGate)
     {
@@ -60,36 +35,6 @@ namespace
         else
             text = "+1 " + pct(s.frequency[2]) + ", -1 " + pct(s.frequency[0]) + ", neutral " + pct(s.frequency[1]);
         return text + "; keeps its state " + pct(stays) + " of bars";
-    }
-
-    Stand measureRole(const NnfxOptions& o, ComponentRole role, const AlignedData& data)
-    {
-        Stand s;
-        if (role == ComponentRole::Filter)
-        {
-            s.isGate = true;
-            s.stats = measureGate(*o.components.filter, data);
-            s.warmup = o.components.filter->warmupBars();
-        }
-        else
-        {
-            const auto& real = role == ComponentRole::Confirmation ? o.components.confirmation : o.components.exitIndicator;
-            s.stats = measureState(*real, data);
-            s.warmup = real->warmupBars();
-        }
-        s.behaviour = describe(s.stats, s.isGate);
-        return s;
-    }
-
-    NnfxOptions withRandom(NnfxOptions o, ComponentRole role, const Stand& s, std::uint64_t seed)
-    {
-        switch (role)
-        {
-            case ComponentRole::Confirmation: o.components.confirmation = randomState(s.stats, s.warmup, seed); break;
-            case ComponentRole::ExitIndicator: o.components.exitIndicator = randomState(s.stats, s.warmup, seed); break;
-            case ComponentRole::Filter: o.components.filter = randomGate(s.stats, s.warmup, seed); break;
-        }
-        return o;
     }
 
     std::vector<double> column(const std::vector<ArmResult>& arms, double ArmResult::*member)
@@ -148,26 +93,80 @@ const char* roleName(ComponentRole role)
     return "";
 }
 
+bool hasRole(const NnfxComponents& c, ComponentRole role)
+{
+    switch (role)
+    {
+        case ComponentRole::Confirmation: return static_cast<bool>(c.confirmation);
+        case ComponentRole::ExitIndicator: return static_cast<bool>(c.exitIndicator);
+        case ComponentRole::Filter: return static_cast<bool>(c.filter);
+    }
+    return false;
+}
+
+NnfxComponents withoutRole(NnfxComponents c, ComponentRole role)
+{
+    switch (role)
+    {
+        case ComponentRole::Confirmation: c.confirmation.reset(); break;
+        case ComponentRole::ExitIndicator: c.exitIndicator.reset(); break;
+        case ComponentRole::Filter: c.filter.reset(); break;
+    }
+    return c;
+}
+
+StandIn measureStandIn(const NnfxComponents& c, ComponentRole role, const AlignedData& data)
+{
+    if (!hasRole(c, role))
+        throw std::invalid_argument(std::string("there is no ") + roleName(role) + " to measure");
+    StandIn s;
+    if (role == ComponentRole::Filter)
+    {
+        s.isGate = true;
+        s.stats = measureGate(*c.filter, data);
+        s.warmup = c.filter->warmupBars();
+    }
+    else
+    {
+        const auto& real = role == ComponentRole::Confirmation ? c.confirmation : c.exitIndicator;
+        s.stats = measureState(*real, data);
+        s.warmup = real->warmupBars();
+    }
+    s.behaviour = describe(s.stats, s.isGate);
+    return s;
+}
+
+NnfxComponents withStandIn(NnfxComponents c, ComponentRole role, const StandIn& s, std::uint64_t seed)
+{
+    switch (role)
+    {
+        case ComponentRole::Confirmation: c.confirmation = randomState(s.stats, s.warmup, seed); break;
+        case ComponentRole::ExitIndicator: c.exitIndicator = randomState(s.stats, s.warmup, seed); break;
+        case ComponentRole::Filter: c.filter = randomGate(s.stats, s.warmup, seed); break;
+    }
+    return c;
+}
+
 ComponentControlResult runComponentControl(const AlignedData& data, const Params& params, const NnfxFactoryMaker& make,
                                            const NnfxOptions& options, ComponentRole role, int seeds,
                                            const GridOptions& grid)
 {
     if (seeds < 1)
         throw std::invalid_argument("the component control needs at least one random run");
-    if (!has(options, role))
+    if (!hasRole(options.components, role))
         throw std::invalid_argument(std::string("there is no ") + roleName(role) + " to control");
 
-    const Stand stand = measureRole(options, role, data);
+    const StandIn stand = measureStandIn(options.components, role, data);
 
     ComponentControlResult out;
     out.behaviour = stand.behaviour;
     out.real = runArm(data, params, make(options), grid);
-    out.without = runArm(data, params, make(::without(options, role)), grid);
+    out.without = runArm(data, params, make(withComponents(options, withoutRole(options.components, role))), grid);
 
     out.random.resize(static_cast<std::size_t>(seeds));
     parallelFor(out.random.size(), grid.threads, [&](std::size_t i)
     {
-        out.random[i] = runArm(data, params, make(withRandom(options, role, stand, static_cast<std::uint64_t>(i + 1))), grid);
+        out.random[i] = runArm(data, params, make(withComponents(options, withStandIn(options.components, role, stand, static_cast<std::uint64_t>(i + 1)))), grid);
     });
 
     out.sharpeRank = percentileRank(out.real.sharpe, column(out.random, &ArmResult::sharpe));

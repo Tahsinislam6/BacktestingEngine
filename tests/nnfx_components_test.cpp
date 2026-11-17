@@ -507,6 +507,33 @@ TEST(NnfxLimitsTest, RiskFreedByAnExitInTheSameSnapshotIsAvailableToTheNextAsset
     EXPECT_EQ(r.openTrades[0].asset, 1);
 }
 
+TEST(NnfxLimitsTest, ARunnerWhoseStopIsBeyondItsEntryRisksNothing)
+{
+    NnfxOptions o = base();
+    o.trailAtr = 0.5;                                             // the trail lifts the runner's stop above its entry
+    o.maxOpenRisk = 0.025;                                        // the second signal needs 2%: it fits only if the runner risks 0
+    // asset 0: long, target hit, runs up (its stop is then 103.25 against an entry of 100.5); asset 1 crosses up on bar 5
+    const std::vector<Bar> first{below, crossUp, ohlc(100.6, 104, 100.4, 103), ohlc(103, 106, 102.5, 105), ohlc(105, 105.5, 104, 104.5)};
+    const std::vector<Bar> second{below, below, below, below, crossUp};
+
+    const BacktestResult r = runTwo({"EURUSD", "GBPUSD"}, o, first, second);
+
+    EXPECT_EQ(r.openTrades.size(), 3u);                           // the runner and the new pair
+}
+
+TEST(NnfxLimitsTest, ARunnerStillBelowItsEntryWithItsFirstStopCountsItsRisk)
+{
+    NnfxOptions o = base();
+    o.maxOpenRisk = 0.025;
+    // asset 0's pair is open with both stops at 96 (4.5 below the entry): 2% at risk, so a second 2% signal does not fit
+    const std::vector<Bar> first{below, crossUp, ohlc(100.4, 101, 100.1, 100.3), ohlc(100.3, 100.4, 100.1, 100.2), ohlc(100.2, 100.4, 100.1, 100.3)};
+    const std::vector<Bar> second{below, below, below, below, crossUp};
+
+    const BacktestResult r = runTwo({"EURUSD", "GBPUSD"}, o, first, second);
+
+    EXPECT_EQ(r.openTrades.size(), 2u);
+}
+
 TEST(NnfxLimitsTest, TheCurrencyCapBlocksASecondLongOnTheSameCurrencyLeg)
 {
     NnfxOptions o = base();

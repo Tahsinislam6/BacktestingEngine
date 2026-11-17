@@ -21,6 +21,24 @@ enum class ComponentRole { Confirmation, ExitIndicator, Filter };
 
 const char* roleName(ComponentRole role);       // "confirmation", "exit indicator", "filter"
 
+// The building blocks of the control, on a bare set of components (so other tools can reuse them):
+//   hasRole / withoutRole   is there a component in this role / the same set without it
+//   measureStandIn          what a random stand-in for the role's component must copy (frequencies and persistence,
+//                           measured on `data`), plus a text describing it
+//   withStandIn             the set with the role's component replaced by a fresh stand-in of that seed
+struct StandIn
+{
+    ChainStats stats;
+    std::size_t warmup{};
+    bool isGate{false};
+    std::string behaviour;              // e.g. "+1 48%, -1 47%, neutral 5%; keeps its state 93% of bars"
+};
+
+bool hasRole(const NnfxComponents& components, ComponentRole role);
+NnfxComponents withoutRole(NnfxComponents components, ComponentRole role);
+StandIn measureStandIn(const NnfxComponents& components, ComponentRole role, const AlignedData& data);   // throws std::invalid_argument if there is no such component
+NnfxComponents withStandIn(NnfxComponents components, ComponentRole role, const StandIn& stand, std::uint64_t seed);
+
 struct ComponentControlResult
 {
     ArmResult real;

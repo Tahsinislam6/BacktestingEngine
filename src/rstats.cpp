@@ -68,7 +68,8 @@ RReport computeRReport(const std::vector<ClosedTrade>& closed, int openAtEnd)
 
     for (const ClosedTrade& c : closed)
     {
-        const double risk = c.trade.stopLoss ? c.trade.quantity * std::abs(c.trade.entryPrice - *c.trade.stopLoss) : 0.0;
+        // the risk the trade started with: a moved stop (breakeven, trailing) does not change what 1R was
+        const double risk = c.trade.initialStop ? c.trade.quantity * std::abs(c.trade.entryPrice - *c.trade.initialStop) : 0.0;
         if (!(risk > 0.0))
         {
             ++withoutStop;

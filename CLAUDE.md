@@ -2,7 +2,11 @@
 
 C++20, CMake + GoogleTest. Build: `cmake -S . -B build && cmake --build build`. Tests: `./build/engine_tests`.
 Run: `./build/backtester --insample <folder> --outsample <folder> --baseline <name> [--mode flip|nnfx]` (`--help` lists everything).
-Modes: `flip` = always in the market; `nnfx` = baseline-cross entries, ATR stop/target, runner with breakeven + trailing exit.
+Modes: `flip` = always in the market; `nnfx` = baseline-cross entries, ATR stop/target, runner with breakeven + trailing stop.
+Exits are real stop orders: after the target half is taken the runner's stop is MOVED (`OrderType::MoveStop`) to its
+entry price and then trailed behind the best close; it fills at the stop (or the open on a gap) on a later bar. R is
+always measured from the stop the trade opened with (`Trade::initialStop`). Log rows made before this change (no
+`stops=orders` in the setup column) used close-only checks and are not comparable with the new ones.
 Control: `--mode nnfx --no-cross-exit --control 200` compares the winner's direction with 200 random-direction runs.
 
 ## Adding a baseline indicator (the only thing most tasks need)
@@ -57,6 +61,31 @@ nnfx switches, objective, min trades), costs and the data folders, then the numb
 what the test was for and what you decided in advance (the pass rule). A log file with other columns than the program
 writes is refused: move it aside to start a new one. Read the `data = out-of-sample` rows; in-sample is tuned.
 
+## Entry study (does the baseline's signal carry any information?)
+
+`--mode nnfx --entry-study 1000 [--log-dir results --note "..."]` (after the usual study, on the winner): for every
+baseline cross the don't-chase filter lets through it measures where price goes 1, 2, 3, 5, 10, 20 and 40 bars later
+in ATR units in the signal's direction (gross and net of the spread), the share that moved the right way, a
+target-vs-stop race (target 1 ATR, stop 1.5 ATR, 40 bars, stop first on a tie) and the best/worst excursion over 20
+bars. Everything is compared with the same signals given a coin-flip direction ("beats" = share of random runs it is
+better than). No stops, sizing or position limits are involved and overlapping signals all count, so it shows whether
+the entry has any edge before the exits can hide or mimic one. Read the out-of-sample table only. Set the reading rule
+in `--note` first (e.g. informative only if the out-of-sample mean is > 0 and beats >= 90% at several consecutive
+horizons). Note the race: with a 1 ATR target and a 1.5 ATR stop even random directions win about 60% of races, so the
+target half breaks even by construction. Logged in `entry_study_log.csv`.
+Other signals need no baseline: `--signal breakout:20 --entry-study 1000` (the close breaks the previous 20 bars' high/low; a
+same-way break counts only if the last one was more than 20 bars ago) or `--signal momentum:60` (the sign of the 60-bar
+return flips). Nothing is tuned, so both the in-sample and the out-of-sample table are fair tests; the don't-chase filter
+does not apply. The random-direction comparison is a coin flip per signal, which is slightly generous at 40 bars when
+same-way signals can overlap.
+With `--confirm` / `--filter` the study applies them to the signals the way the strategy does (a cross waits up to
+`--confirm-window` bars for the confirmation; the entry bar is where the forward moves are measured from).
+`--entry-control N` then asks, for each chosen confirmation / filter, whether its entries are better than those of N
+random stand-ins with the same frequency and persistence (and than no component at all): means at each horizon, the
+race R and the excursion balance, ranked among the stand-ins. This is a cleaner test than `--component-control`
+because no stops, sizing or position limits sit between the component and the measurement. Logged in
+`entry_control_log.csv`. Exit indicators are not entries, so they are refused.
+
 ## Screening baselines (the loop to follow for each new indicator)
 
 1. Add the baseline file (above), build, run `./build/engine_tests`; fix anything the generic tests flag.
@@ -83,5 +112,8 @@ baseline use `--baseline <name> --mode nnfx [--no-cross-exit --control 200]`.
 
 ## Conventions
 - Data: daily FX CSVs, millisecond timestamps (`timestamp,open,high,low,close,...`), one file per pair.
+  Lives next to the project, outside it: `../data/in-sample` and `../data/out-of-sample` (10 pairs each).
+  Run from the project folder with `--insample ../data/in-sample --outsample ../data/out-of-sample`.
+  (The old copy under ~/Downloads/Trading/API is identical; the first log rows still name that path.)
 - Costs: per-pair spread in pips, applied as half the spread on every fill (`costs.hpp`, `costs.csv`).
 - Write tests first and check them by breaking the code on purpose (mutation check).

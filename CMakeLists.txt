@@ -12,7 +12,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Your code lives in a library so both the app and the tests can use it
-add_library(engine src/engine.cpp src/loader.cpp src/portfolio.cpp src/backtester.cpp src/timestamp.cpp src/aligned.cpp src/multi_backtester.cpp src/metrics.cpp src/zigzag.cpp src/capture.cpp src/param_space.cpp src/optimiser.cpp src/validation.cpp src/dataset.cpp src/report.cpp src/study.cpp src/cli.cpp src/sundays.cpp src/costs.cpp src/baseline_registry.cpp src/rstats.cpp src/control.cpp src/screen.cpp src/components_registry.cpp src/nnfx_setup.cpp src/random_component.cpp src/component_control.cpp src/result_log.cpp)
+add_library(engine src/engine.cpp src/loader.cpp src/portfolio.cpp src/backtester.cpp src/timestamp.cpp src/aligned.cpp src/multi_backtester.cpp src/metrics.cpp src/zigzag.cpp src/capture.cpp src/param_space.cpp src/optimiser.cpp src/validation.cpp src/dataset.cpp src/report.cpp src/study.cpp src/cli.cpp src/sundays.cpp src/costs.cpp src/baseline_registry.cpp src/rstats.cpp src/control.cpp src/screen.cpp src/components_registry.cpp src/nnfx_setup.cpp src/random_component.cpp src/component_control.cpp src/result_log.cpp src/entry_study.cpp)
 target_include_directories(engine PUBLIC include ${CMAKE_BINARY_DIR}/generated)
 
 # Every header in include/baselines/ is a baseline. This writes the list the registry is built from, so adding a

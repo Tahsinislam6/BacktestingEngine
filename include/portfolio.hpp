@@ -18,6 +18,10 @@ class Portfolio
         
         bool close(int id, double price, std::int64_t time, ExitReason why);
 
+        // Gives an open trade a new stop; a hit of it is recorded as `why`. The trade's initialStop is not touched.
+        // Returns false (and does nothing) if there is no open trade with that id.
+        bool moveStop(int id, double price, ExitReason why);
+
         double equity(double markPrice) const;
 
         // marks[asset] = price used to value open trades on that asset.

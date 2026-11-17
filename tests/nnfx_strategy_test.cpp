@@ -16,7 +16,8 @@
 //   Entry     two trades via nnfxEntryOrders: a half with a take-profit and a runner, one shared stop
 //   Chase     skip the entry if the close is more than maxDistanceAtr * ATR from the line
 //   Exit      the close crosses back over the line: close both trades (and enter the other way if allowed)
-//   Breakeven once the take-profit half has been hit, close the runner if the close returns to its entry price
+//   Breakeven once the take-profit half has been hit, the runner's stop is moved to its entry price (a real stop order:
+//             it fills at that price during a later bar, or at the open if the bar gaps through it)
 //   A new signal is only taken when the asset has no open trades.
 //
 // Stand-in baseline: FixedLine at 100. ATR period 1 makes ATR = the bar's true range.
@@ -248,18 +249,33 @@ TEST(NnfxStrategyTest, AStopLossOfTheWholeSignalLosesTwoPercent)
 }
 
 // ---------- breakeven for the runner ----------
+//
+// Once the take-profit half is gone the runner's stop is MOVED to its entry price. That is a stop order like the
+// first one: it fills at that price (at the open if the bar gaps through it), not at a later close.
 
-TEST(NnfxStrategyTest, AfterTheTargetTheRunnerIsClosedWhenTheCloseReturnsToItsEntry)
+TEST(NnfxStrategyTest, AfterTheTargetTheRunnersStopMovesToItsEntry)
 {
+    const BacktestResult r = run({below, crossUp, ohlc(100.6, 104, 100.4, 103)});
+
+    ASSERT_EQ(r.closedTrades.size(), 1u);                 // the target half
+    ASSERT_EQ(r.openTrades.size(), 1u);                   // the runner
+    EXPECT_DOUBLE_EQ(*r.openTrades[0].stopLoss, 100.5);
+    EXPECT_EQ(r.openTrades[0].stopReason, ExitReason::Breakeven);
+    EXPECT_DOUBLE_EQ(*r.openTrades[0].initialStop, 96.0);
+}
+
+TEST(NnfxStrategyTest, TheRunnerIsStoppedAtItsEntryPriceNotAtALaterClose)
+{
+    // bar 3 trades down to 100 and closes at 100.4: the stop at 100.5 was hit on the way, and fills at 100.5
     const BacktestResult r = run({below, crossUp, ohlc(100.6, 104, 100.4, 103), ohlc(103, 103, 100, 100.4)});
 
     ASSERT_EQ(r.closedTrades.size(), 2u);
     EXPECT_EQ(r.closedTrades[1].reason, ExitReason::Breakeven);
-    EXPECT_DOUBLE_EQ(r.closedTrades[1].exitPrice, 100.4);
+    EXPECT_DOUBLE_EQ(r.closedTrades[1].exitPrice, 100.5);
     EXPECT_TRUE(r.openTrades.empty());
 }
 
-TEST(NnfxStrategyTest, TheBreakevenExitAlsoFiresWhenTheCloseIsExactlyAtTheEntryPrice)
+TEST(NnfxStrategyTest, TheBreakevenStopAlsoFiresWhenTheLowIsExactlyTheEntryPrice)
 {
     const BacktestResult r = run({below, crossUp, ohlc(100.6, 104, 100.4, 103), ohlc(103, 103, 100.5, 100.5)});
 
@@ -267,13 +283,36 @@ TEST(NnfxStrategyTest, TheBreakevenExitAlsoFiresWhenTheCloseIsExactlyAtTheEntryP
     EXPECT_TRUE(r.openTrades.empty());
 }
 
-TEST(NnfxStrategyTest, BeforeTheTargetThereIsNoBreakevenExit)
+TEST(NnfxStrategyTest, AGapThroughTheBreakevenStopFillsAtTheOpen)
+{
+    const BacktestResult r = run({below, crossUp, ohlc(100.6, 104, 100.4, 103), ohlc(99, 99.5, 98, 98.5)});
+
+    ASSERT_EQ(r.closedTrades.size(), 2u);
+    EXPECT_EQ(r.closedTrades[1].reason, ExitReason::Breakeven);
+    EXPECT_DOUBLE_EQ(r.closedTrades[1].exitPrice, 99.0);
+}
+
+TEST(NnfxStrategyTest, TheTargetBarClosingBelowTheEntryClosesTheRunnerAtThatCloseAsBreakeven)
+{
+    // the target is hit and the bar then closes at 100.3, under the entry 100.5: a stop at 100.5 would be above the
+    // price, so it cannot be placed - the runner is closed at the close instead
+    const BacktestResult r = run({below, crossUp, ohlc(100.6, 104, 100.2, 100.3)});
+
+    ASSERT_EQ(r.closedTrades.size(), 2u);
+    EXPECT_EQ(r.closedTrades[1].reason, ExitReason::Breakeven);
+    EXPECT_DOUBLE_EQ(r.closedTrades[1].exitPrice, 100.3);
+    EXPECT_TRUE(r.openTrades.empty());
+}
+
+TEST(NnfxStrategyTest, BeforeTheTargetThereIsNoBreakevenStop)
 {
     // close back below the entry (100.5) but above the line and the stop; the target was never hit
     const BacktestResult r = run({below, crossUp, ohlc(100.5, 101, 100.1, 100.3)});
 
-    EXPECT_EQ(r.openTrades.size(), 2u);
+    ASSERT_EQ(r.openTrades.size(), 2u);
     EXPECT_TRUE(r.closedTrades.empty());
+    for (const Trade& t : r.openTrades)
+        EXPECT_DOUBLE_EQ(*t.stopLoss, 96.0);
 }
 
 TEST(NnfxStrategyTest, TheRunnerStaysOpenAboveItsEntryAfterTheTarget)
@@ -288,21 +327,33 @@ TEST(NnfxStrategyTest, BreakevenCanBeSwitchedOff)
     NnfxOptions o = options();
     o.breakeven = false;
 
+    // no breakeven stop: the runner is only protected by its first stop and the trail
     const BacktestResult r = run({below, crossUp, ohlc(100.6, 104, 100.4, 103), ohlc(103, 103, 100.2, 100.4)}, o);
 
-    EXPECT_EQ(r.openTrades.size(), 1u);
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_NE(*r.openTrades[0].stopLoss, 100.5);
 }
 
-TEST(NnfxStrategyTest, ABreakevenExitForAShortMirrorsTheLong)
+TEST(NnfxStrategyTest, ABreakevenStopForAShortMirrorsTheLong)
 {
-    // short from 99.5 (stop 107, target 94.5); the target is hit, then the close returns to 99.5 or above
+    // short from 99.5 (stop 107, target 94.5); the target is hit (the stop moves down to 99.5), then a bar rises to 99.6
     const BacktestResult r = run({ohlc(102, 103, 101, 102), ohlc(102, 102, 97, 99.5), ohlc(99.4, 99.5, 94, 95),
                                   ohlc(95, 99.6, 95, 99.6)});
 
     ASSERT_EQ(r.closedTrades.size(), 2u);
     EXPECT_EQ(r.closedTrades[0].reason, ExitReason::TakeProfit);
     EXPECT_EQ(r.closedTrades[1].reason, ExitReason::Breakeven);
-    EXPECT_DOUBLE_EQ(r.closedTrades[1].exitPrice, 99.6);
+    EXPECT_DOUBLE_EQ(r.closedTrades[1].exitPrice, 99.5);
+}
+
+TEST(NnfxStrategyTest, ABreakevenStopOnAShortIsNotPlacedBelowThePrice)
+{
+    // short from 99.5; the target bar closes at 99.7, above the entry: a buy-stop at 99.5 would be under the price
+    const BacktestResult r = run({ohlc(102, 103, 101, 102), ohlc(102, 102, 97, 99.5), ohlc(99.4, 99.8, 94, 99.7)});
+
+    ASSERT_EQ(r.closedTrades.size(), 2u);
+    EXPECT_EQ(r.closedTrades[1].reason, ExitReason::Breakeven);
+    EXPECT_DOUBLE_EQ(r.closedTrades[1].exitPrice, 99.7);
 }
 
 // ---------- the cross back ----------
@@ -554,11 +605,15 @@ TEST(NnfxStrategyTest, NoEntryIsTakenWithoutEquity)
     EXPECT_TRUE(r.openTrades.empty());
 }
 
-// ---------- trailing exit for the runner ----------
+// ---------- trailing stop for the runner ----------
 //
-// Once the target half has been hit, the runner is closed when its close falls trailAtr * ATR (the current ATR)
-// below the highest close since entry (a short: rises above the lowest close). Same side effects as the
-// breakeven exit: it is checked on the close. Breakeven takes precedence when both apply. Off with nullopt.
+// Once the target half has been hit, the runner's stop follows the best close since entry: it is moved to
+// best close - trailAtr * ATR (the current ATR, a short: best close + ...) after every close, and never moves back.
+// With the breakeven stop on, the stop is the better of the entry price and the trail; the reason recorded for a hit
+// is Breakeven while the entry price is the better one (a tie counts as Breakeven) and Trailing once the trail is.
+// Both are real stop orders: they fill at the stop price during a later bar, or at the open if it gaps through it.
+// A level that is not on the right side of the close cannot be placed, so the runner is closed at the close instead.
+// Off with nullopt.
 
 namespace
 {
@@ -574,45 +629,82 @@ const Bar targetHit = ohlc(100.6, 104, 100.4, 103);
 const Bar runsUp = ohlc(103, 106, 102.5, 105);        // true range 3.5
 }
 
-TEST(NnfxTrailingTest, TheRunnerIsClosedWhenTheCloseFallsAnAtrMultipleBelowTheBestClose)
+TEST(NnfxTrailingTest, TheStopFollowsTheBestCloseByTheCurrentAtr)
 {
-    // after 105 the next bar has true range 3, so the trail is 0.5 * 3 = 1.5 below 105 = 103.5; it closes at 102.5
+    // after the target bar: true range 3.6, trail 0.5 * 3.6 = 1.8 below the close 103 = 101.2, better than the entry 100.5
+    // after 105 (true range 3.5): 105 - 1.75 = 103.25
+    const BacktestResult afterTarget = run({below, crossUp, targetHit}, trailing(0.5));
+    ASSERT_EQ(afterTarget.openTrades.size(), 1u);
+    EXPECT_NEAR(*afterTarget.openTrades[0].stopLoss, 101.2, 1e-9);
+    EXPECT_EQ(afterTarget.openTrades[0].stopReason, ExitReason::Trailing);
+
+    const BacktestResult afterRun = run({below, crossUp, targetHit, runsUp}, trailing(0.5));
+    ASSERT_EQ(afterRun.openTrades.size(), 1u);
+    EXPECT_NEAR(*afterRun.openTrades[0].stopLoss, 103.25, 1e-9);
+}
+
+TEST(NnfxTrailingTest, TheRunnerIsStoppedOutAtTheTrailingStop)
+{
+    // the next bar trades down to 102, through the stop at 103.25: it fills there, not at the close of 102.5
     const BacktestResult r = run({below, crossUp, targetHit, runsUp, ohlc(105, 105, 102, 102.5)}, trailing(0.5));
 
     ASSERT_EQ(r.closedTrades.size(), 2u);
     EXPECT_EQ(r.closedTrades[1].reason, ExitReason::Trailing);
-    EXPECT_DOUBLE_EQ(r.closedTrades[1].exitPrice, 102.5);
+    EXPECT_DOUBLE_EQ(r.closedTrades[1].exitPrice, 103.25);
     EXPECT_TRUE(r.openTrades.empty());
 }
 
-TEST(NnfxTrailingTest, TheRunnerStaysWhileTheCloseIsWithinTheTrail)
+TEST(NnfxTrailingTest, AGapThroughTheTrailingStopFillsAtTheOpen)
 {
-    // true range 3 -> trail 0.5 * 3 = 1.5 below the best close 105 = 103.5; it closes at 104
-    const BacktestResult r = run({below, crossUp, targetHit, runsUp, ohlc(105, 105, 102, 104)}, trailing(0.5));
+    const BacktestResult r = run({below, crossUp, targetHit, runsUp, ohlc(102, 102.5, 101.5, 102)}, trailing(0.5));
 
-    EXPECT_EQ(r.closedTrades.size(), 1u);
-    EXPECT_EQ(r.openTrades.size(), 1u);
+    ASSERT_EQ(r.closedTrades.size(), 2u);
+    EXPECT_EQ(r.closedTrades[1].reason, ExitReason::Trailing);
+    EXPECT_DOUBLE_EQ(r.closedTrades[1].exitPrice, 102.0);
 }
 
-TEST(NnfxTrailingTest, TheBestCloseKeepsRisingAndTheTrailFollowsIt)
+TEST(NnfxTrailingTest, TheRunnerStaysWhileTheLowStaysAboveTheStop)
 {
-    // closes 103, 105, 107, then 105.9 (true range 1.1): the trail is 0.55 below 107 = 106.45 -> exit;
-    // measured from the earlier best close of 105 (104.45) it would have stayed
+    // low 103.5 stays above the stop 103.25 and the close 104.8 is above the new level 105 - 0.5 * 2 (true range 2) = 104:
+    // the runner stays and its stop rises to 104
+    const BacktestResult r = run({below, crossUp, targetHit, runsUp, ohlc(105, 105.5, 103.5, 104.8)}, trailing(0.5));
+
+    EXPECT_EQ(r.closedTrades.size(), 1u);
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_NEAR(*r.openTrades[0].stopLoss, 104.0, 1e-9);
+}
+
+TEST(NnfxTrailingTest, TheStopNeverMovesBack)
+{
+    // a wide bar (true range 5) would put the raw trail at 105 - 2.5 = 102.5, below the stop 103.25: it stays at 103.25
+    const BacktestResult r = run({below, crossUp, targetHit, runsUp, ohlc(105, 109, 104, 105)}, trailing(0.5));
+
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_NEAR(*r.openTrades[0].stopLoss, 103.25, 1e-9);
+}
+
+TEST(NnfxTrailingTest, TheBestCloseKeepsRisingAndTheStopFollowsIt)
+{
+    // closes 103, 105, 107: the stop is 107 - 0.5 * 2 (true range 2) = 106; the next bar trades down to 105.9 and is
+    // stopped at 106 (from the earlier best close of 105 the stop would have been far lower and not hit)
     const BacktestResult r = run({below, crossUp, targetHit, runsUp, ohlc(105, 107, 105, 107), ohlc(107, 107, 105.9, 105.9)},
                                  trailing(0.5));
 
     ASSERT_EQ(r.closedTrades.size(), 2u);
     EXPECT_EQ(r.closedTrades[1].reason, ExitReason::Trailing);
+    EXPECT_DOUBLE_EQ(r.closedTrades[1].exitPrice, 106.0);
 }
 
 TEST(NnfxTrailingTest, NotBeforeTheTargetHasBeenHit)
 {
-    // the target 103.5 is not reached (high 103); the close then falls more than the trail from the best close
+    // the target 103.5 is not reached (high 103); the close then falls far from the best close, but nothing is moved
     const BacktestResult r = run({below, crossUp, ohlc(100.6, 103, 100.4, 102.9), ohlc(102.9, 103, 101, 101.2)},
                                  trailing(0.5));
 
-    EXPECT_EQ(r.openTrades.size(), 2u);
+    ASSERT_EQ(r.openTrades.size(), 2u);
     EXPECT_TRUE(r.closedTrades.empty());
+    for (const Trade& t : r.openTrades)
+        EXPECT_DOUBLE_EQ(*t.stopLoss, 96.0);
 }
 
 TEST(NnfxTrailingTest, CanBeSwitchedOff)
@@ -622,28 +714,65 @@ TEST(NnfxTrailingTest, CanBeSwitchedOff)
 
     const BacktestResult r = run({below, crossUp, targetHit, runsUp, ohlc(105, 105, 102, 102.5)}, o);
 
-    EXPECT_EQ(r.openTrades.size(), 1u);
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_DOUBLE_EQ(*r.openTrades[0].stopLoss, 100.5);       // only the breakeven stop
 }
 
 TEST(NnfxTrailingTest, AShortRunnerTrailsAboveTheLowestClose)
 {
-    // short from 99.5 (stop 107, target 94.5); the target is hit and the close runs down to 93, then bounces to 94.4:
-    // true range 1.4 on the bounce bar -> trail 0.5 * 1.4 = 0.7 above 93 = 93.7 -> exit at 94.4
+    // short from 99.5 (stop 107, target 94.5); the target is hit (close 95): the stop becomes 95 + 0.5 * 5.5 = 97.75,
+    // then the close runs down to 93 (true range 2): 93 + 1 = 94; the bounce bar's high 94.4 reaches it: filled at 94
     const BacktestResult r = run({ohlc(102, 103, 101, 102), ohlc(102, 102, 97, 99.5), ohlc(99.4, 99.5, 94, 95),
                                   ohlc(95, 95, 93, 93), ohlc(93, 94.4, 93, 94.4)}, trailing(0.5));
 
     ASSERT_EQ(r.closedTrades.size(), 2u);
     EXPECT_EQ(r.closedTrades[0].reason, ExitReason::TakeProfit);
     EXPECT_EQ(r.closedTrades[1].reason, ExitReason::Trailing);
-    EXPECT_DOUBLE_EQ(r.closedTrades[1].exitPrice, 94.4);
+    EXPECT_DOUBLE_EQ(r.closedTrades[1].exitPrice, 94.0);
 }
 
-TEST(NnfxTrailingTest, BreakevenTakesPrecedenceWhenTheCloseIsBackAtTheEntry)
+TEST(NnfxTrailingTest, WhileTheEntryPriceIsTheBetterStopTheReasonIsBreakeven)
 {
-    const BacktestResult r = run({below, crossUp, targetHit, runsUp, ohlc(105, 105, 100, 100.4)}, trailing(0.5));
+    // with the default trail (1.5 * 3.6 = 5.4 below 103) the trail is below the entry: the stop is the entry price
+    const BacktestResult r = run({below, crossUp, targetHit}, options());
+
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_DOUBLE_EQ(*r.openTrades[0].stopLoss, 100.5);
+    EXPECT_EQ(r.openTrades[0].stopReason, ExitReason::Breakeven);
+}
+
+TEST(NnfxTrailingTest, ATieBetweenTheTrailAndTheEntryCountsAsBreakeven)
+{
+    // target bar (100.5, 104.5, 100.5, 102.5): true range 4, trail 0.5 * 4 = 2 below the close 102.5 = 100.5 = the entry
+    const BacktestResult r = run({below, crossUp, ohlc(100.5, 104.5, 100.5, 102.5)}, trailing(0.5));
+
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_DOUBLE_EQ(*r.openTrades[0].stopLoss, 100.5);
+    EXPECT_EQ(r.openTrades[0].stopReason, ExitReason::Breakeven);
+}
+
+TEST(NnfxTrailingTest, ATrailBelowTheEntryDoesNotLoosenTheBreakevenStop)
+{
+    // the trail alone would put the stop at 98.75; with breakeven on the entry price is used
+    const BacktestResult r = run({below, crossUp, ohlc(100.6, 104, 100.4, 103), ohlc(103, 104, 102, 102.5)}, trailing(2.0));
+
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_GE(*r.openTrades[0].stopLoss, 100.5);
+}
+
+TEST(NnfxTrailingTest, ATrailLevelNotBelowTheCloseClosesTheRunnerAtTheClose)
+{
+    // the close 103.4 is the best so far (the target 103.5 is not touched); the next bar spikes to 104, hits the
+    // target, and closes at 100.9. True range 3.3, trail 0.5 * 3.3 = 1.65 -> a stop at 103.4 - 1.65 = 101.75 would be
+    // above the close, so it cannot be placed: the runner is closed at 100.9 as a trailing exit
+    const BacktestResult r = run({below, crossUp, ohlc(100.6, 103.4, 100.4, 103.4), ohlc(103.4, 104, 100.7, 100.9)},
+                                 trailing(0.5));
 
     ASSERT_EQ(r.closedTrades.size(), 2u);
-    EXPECT_EQ(r.closedTrades[1].reason, ExitReason::Breakeven);
+    EXPECT_EQ(r.closedTrades[0].reason, ExitReason::TakeProfit);
+    EXPECT_EQ(r.closedTrades[1].reason, ExitReason::Trailing);
+    EXPECT_DOUBLE_EQ(r.closedTrades[1].exitPrice, 100.9);
+    EXPECT_TRUE(r.openTrades.empty());
 }
 
 TEST(NnfxTrailingTest, AlsoWorksWithTheCrossBackExitOn)
@@ -658,8 +787,7 @@ TEST(NnfxTrailingTest, AlsoWorksWithTheCrossBackExitOn)
 
 TEST(NnfxTrailingTest, ANewSignalCanBeTakenOnceTheRunnerIsGone)
 {
-    // after the trailing exit (price still above the line), a later cross down and a cross up each find the strategy
-    // flat or not; here: the cross down at the end opens a new short pair
+    // after the trailing stop (price still above the line) a later cross down opens a new short pair
     const BacktestResult r = run({below, crossUp, targetHit, runsUp, ohlc(105, 105, 102, 102.5), ohlc(102.5, 102.5, 97.5, 98)},
                                  trailing(0.5));
 

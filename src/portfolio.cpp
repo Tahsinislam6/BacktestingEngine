@@ -16,6 +16,7 @@ int Portfolio::open(Direction d, double qty, double price, std::int64_t time,
     t.entryTime = time;
     t.stopLoss = sl;
     t.takeProfit = tp;
+    t.initialStop = sl;
 
     open_.push_back(t);
     return t.id;
@@ -39,6 +40,18 @@ bool Portfolio::close(int id, double price, std::int64_t time, ExitReason why)
     closed_.push_back(c);
     open_.erase(it);
 
+    return true;
+}
+
+bool Portfolio::moveStop(int id, double price, ExitReason why)
+{
+    auto it = std::find_if(open_.begin(), open_.end(),
+    [id](const Trade& t) {return t.id == id;});
+    if (it == open_.end())
+        return false;
+
+    it->stopLoss = price;
+    it->stopReason = why;
     return true;
 }
 

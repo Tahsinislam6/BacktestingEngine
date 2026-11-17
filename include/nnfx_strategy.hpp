@@ -25,10 +25,9 @@ struct NnfxOptions
     std::optional<double> maxDistanceAtr{1.0};  // skip an entry whose close is further than this many ATR from
                                                 // the line; nullopt = take every signal
     bool exitOnCross{true};                     // close the trades when the close crosses back over the line
-    bool breakeven{true};                       // after the target is hit, close the runner if the close
-                                                // returns to its entry price
-    std::optional<double> trailAtr{1.5};        // after the target, close the runner when its close falls this many
-                                                // ATR from the best close since entry; nullopt = no trailing exit
+    bool breakeven{true};                       // after the target is hit, move the runner's stop to its entry price
+    std::optional<double> trailAtr{1.5};        // after the target, trail the runner's stop this many ATR behind the
+                                                // best close since entry; nullopt = no trailing stop
     int atrPeriod{14};
 
     // Other NNFX components (each may be empty) and how they are used:
@@ -64,10 +63,13 @@ struct NnfxOptions
 //   Cross back exitOnCross: both trades are closed at the close, and the new signal may enter the other way.
 //   Exit indicator an open trade is closed when its state is the opposite of the trade's direction.
 //   Breakeven  once the take-profit half is gone and the runner is still open (so the target was hit, not
-//              the stop), the runner is closed when the close is back at or beyond its entry price.
-//   Trailing   such a runner is also closed when its close falls trailAtr * ATR back from the best close since
-//              entry. Breakeven wins if both apply.
-//              Both are checked on the close, because the engine cannot move a stop.
+//              the stop), the runner's stop is moved to its entry price.
+//   Trailing   such a runner's stop also follows the best close since entry, trailAtr * ATR behind it (the current
+//              ATR); the stop used is the better of the two and it never moves back. A hit is recorded as Breakeven
+//              while the entry price is the better level (a tie too) and as Trailing once the trail is.
+//              These are real stop orders (OrderType::MoveStop, set at the close, first applying on the next bar): they
+//              fill at the stop price, or at the open if the bar gaps through it. A level that is not on the right side
+//              of the close cannot be placed, so the runner is closed at the close instead, with the same reason.
 //
 // B is any BaselineLine; it is copied once per asset.
 template <BaselineLine B>
@@ -200,14 +202,33 @@ public:
             else if (const Trade* runner = armedRunner(open))
             {
                 const bool isLong = runner->direction == Direction::Long;
-                const bool backAtEntry = isLong ? close <= runner->entryPrice : close >= runner->entryPrice;
-                const double trail = options_.trailAtr ? *options_.trailAtr * atrs_[a].value() : 0.0;
-                const bool trailedOut = options_.trailAtr && (isLong ? close <= best_[a] - trail
-                                                                      : close >= best_[a] + trail);
-                if (options_.breakeven && backAtEntry)
-                    closeTrade(runner, ExitReason::Breakeven);
-                else if (trailedOut)
-                    closeTrade(runner, ExitReason::Trailing);
+
+                // the stop the runner should have now: the entry price (breakeven) and/or the trail behind the best
+                // close, whichever protects more; a tie counts as breakeven
+                std::optional<double> level;
+                ExitReason reason = ExitReason::Breakeven;
+                if (options_.breakeven)
+                    level = runner->entryPrice;
+                if (options_.trailAtr)
+                {
+                    const double trail = *options_.trailAtr * atrs_[a].value();
+                    const double trailLevel = isLong ? best_[a] - trail : best_[a] + trail;
+                    if (!level || (isLong ? trailLevel > *level : trailLevel < *level))
+                    {
+                        level = trailLevel;
+                        reason = ExitReason::Trailing;
+                    }
+                }
+
+                if (level)
+                {
+                    const bool better = !runner->stopLoss || (isLong ? *level > *runner->stopLoss : *level < *runner->stopLoss);
+                    const bool placeable = isLong ? *level < close : *level > close;
+                    if (better && placeable)
+                        orders.push_back(moveStopOrder(runner->id, *level, reason));
+                    else if (better)
+                        closeTrade(runner, reason);          // the stop would be on the wrong side of the price
+                }
             }
 
             if (!exit_.empty() && !open.empty())
@@ -308,9 +329,14 @@ private:
                (gate_.empty() || gate_[a]->ready());
     }
 
+    // what the trade can still lose: the distance from its entry to its stop on the losing side. A stop moved to or
+    // beyond the entry price has locked in a profit, so it risks nothing.
     static double riskOf(const Trade& t)
     {
-        return t.stopLoss ? t.quantity * std::abs(t.entryPrice - *t.stopLoss) : 0.0;
+        if (!t.stopLoss)
+            return 0.0;
+        const double distance = t.direction == Direction::Long ? t.entryPrice - *t.stopLoss : *t.stopLoss - t.entryPrice;
+        return distance > 0.0 ? t.quantity * distance : 0.0;
     }
 
     static const Trade* firstTrade(const Portfolio& portfolio, int asset)

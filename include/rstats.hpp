@@ -30,8 +30,8 @@ struct RStats
     // the trades split by how they ended
     ExitStats stop;            // StopLoss
     ExitStats target;          // TakeProfit
-    ExitStats breakeven;       // Breakeven
-    ExitStats trailing;        // Trailing (the runner fell back from its best close)
+    ExitStats breakeven;       // Breakeven (the runner was stopped out at its entry price)
+    ExitStats trailing;        // Trailing (the runner was stopped out by the trailing stop)
     ExitStats indicator;       // Indicator (an exit indicator turned against the trade)
     ExitStats signal;          // Signal (the baseline crossed back)
 };

@@ -92,6 +92,60 @@ ComponentControlResult componentResult()
     r.behaviour = "+1 51%, -1 49%, neutral 0%; keeps its state 88% of bars";
     return r;
 }
+
+EntryControlResult entryControlResult()
+{
+    EntryControlResult r;
+    auto arm = [](int events, double base)
+    {
+        EntryArm a;
+        a.events = events;
+        for (int i = 0; i < 7; ++i)
+            a.meanAtr.push_back(base + 0.01 * i);
+        a.raceR = base * 2;
+        a.balance = base * 10;
+        return a;
+    };
+    r.real = arm(300, 0.10);
+    r.without = arm(400, 0.02);
+    r.random = {arm(250, 0.04), arm(270, 0.06)};
+    for (int i = 0; i < 7; ++i)
+        r.meanBeats.push_back(0.5 + 0.05 * i);
+    r.raceBeats = 0.9;
+    r.balanceBeats = 0.8;
+    r.behaviour = "+1 51%, -1 49%, neutral 0%; keeps its state 87% of bars";
+    return r;
+}
+
+EntryStudyResult entryResult()
+{
+    EntryStudyResult r;
+    r.events = 321;
+    const int hs[] = {1, 2, 3, 5, 10, 20, 40};
+    for (int i = 0; i < 7; ++i)
+    {
+        HorizonResult h;
+        h.horizon = hs[i];
+        h.events = 300 - i;
+        h.meanAtr = 0.01 * (i + 1);
+        h.netMeanAtr = 0.01 * (i + 1) - 0.002;
+        h.beats = 0.5 + 0.05 * i;
+        r.horizons.push_back(h);
+    }
+    r.targetFirst = 0.61;
+    r.stopFirst = 0.37;
+    r.neither = 0.02;
+    r.randomTargetFirst = 0.58;
+    r.targetBeats = 0.8;
+    r.raceR = 0.05;
+    r.randomRaceR = -0.01;
+    r.mfeAtr = 2.5;
+    r.maeAtr = 1.5;
+    r.randomMfeAtr = 2.0;
+    r.randomMaeAtr = 2.0;
+    r.excursionBeats = 0.7;
+    return r;
+}
 }
 
 TEST(ResultLog, TimestampIsUtcIso)
@@ -155,6 +209,11 @@ TEST(ResultLog, EveryRowHasAsManyFieldsAsItsHeader)
     EXPECT_EQ(splitCsv(componentLogRow(context(), "kijun", "period=141", ComponentRole::Confirmation, "rsi",
                                        "out-of-sample", 200, componentResult())).size(),
               splitCsv(componentLogHeader()).size());
+    EXPECT_EQ(splitCsv(entryStudyLogRow(context(), "kijun", "period=141", "in-sample", 200, entryResult())).size(),
+              splitCsv(entryStudyLogHeader()).size());
+    EXPECT_EQ(splitCsv(entryControlLogRow(context(), "kijun", "period=141", ComponentRole::Confirmation, "rsi",
+                                          "out-of-sample", 2, entryControlResult())).size(),
+              splitCsv(entryControlLogHeader()).size());
 }
 
 namespace
@@ -175,7 +234,7 @@ std::string field(const std::string& header, const std::string& row, const std::
 TEST(ResultLog, ContextColumnsComeFirstInEveryLog)
 {
     const std::vector<std::string> expected = {"timestamp", "note", "setup", "costs", "insample", "outsample"};
-    for (const std::string& header : {screenLogHeader(), directionLogHeader(), componentLogHeader()})
+    for (const std::string& header : {screenLogHeader(), directionLogHeader(), componentLogHeader(), entryStudyLogHeader(), entryControlLogHeader()})
     {
         const auto h = splitCsv(header);
         ASSERT_GE(h.size(), expected.size());
@@ -289,6 +348,7 @@ TEST(ResultLog, SetupTextNamesWhatWasSwitchedOn)
     for (const char* part : {"nnfx", "no-cross-exit", "confirm=rsi", "filter=atr_expansion", "one-candle",
                              "max-open-risk=0.06", "max-per-currency=2", "objective=sharpe", "min-trades=30"})
         EXPECT_NE(s.find(part), std::string::npos) << part << " missing from: " << s;
+    EXPECT_NE(s.find("stops=orders"), std::string::npos) << s;    // marks rows made after breakeven/trailing became stop orders
     EXPECT_EQ(s.find("exit-indicator"), std::string::npos) << s;  // no exit indicator given
     EXPECT_EQ(s.find("continuation"), std::string::npos) << s;
 }
@@ -315,4 +375,98 @@ TEST(ResultLog, ContextTakesTheFoldersAndNoteFromTheCommandLine)
     EXPECT_EQ(c.note, "why");
     EXPECT_EQ(c.inSample, "in");
     EXPECT_EQ(c.outSample, "out");
+}
+
+TEST(ResultLog, AFlipRunHasNoStopsMarker)
+{
+    CliOptions cli;            // flip mode by default
+    EXPECT_EQ(setupText(cli).find("stops=orders"), std::string::npos);
+}
+
+TEST(ResultLog, EntryStudyRowCarriesTheHorizonsTheRaceAndTheExcursions)
+{
+    const std::string h = entryStudyLogHeader();
+    const std::string r = entryStudyLogRow(context(), "kijun", "period=141", "out-of-sample", 200, entryResult());
+
+    EXPECT_EQ(field(h, r, "baseline"), "kijun");
+    EXPECT_EQ(field(h, r, "params"), "period=141");
+    EXPECT_EQ(field(h, r, "data"), "out-of-sample");
+    EXPECT_EQ(field(h, r, "random_runs"), "200");
+    EXPECT_EQ(field(h, r, "events"), "321");
+    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "h1_mean_atr")), 0.01);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "h5_mean_atr")), 0.04);       // the 4th horizon
+    EXPECT_NEAR(std::stod(field(h, r, "h5_net_atr")), 0.038, 1e-12);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "h5_beats")), 0.65);          // 0.5 + 0.05 * 3
+    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "h40_mean_atr")), 0.07);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "h40_beats")), 0.8);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "target_first")), 0.61);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "stop_first")), 0.37);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "neither")), 0.02);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "random_target_first")), 0.58);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "target_beats")), 0.8);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "race_r")), 0.05);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "random_race_r")), -0.01);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "mfe_atr")), 2.5);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "mae_atr")), 1.5);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "random_mfe_atr")), 2.0);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "random_mae_atr")), 2.0);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "excursion_beats")), 0.7);
+}
+
+TEST(ResultLog, AnEntryStudyWithoutEventsIsAllNan)
+{
+    EntryStudyResult empty;
+    for (int hz : {1, 2, 3, 5, 10, 20, 40})
+    {
+        HorizonResult h;
+        h.horizon = hz;
+        empty.horizons.push_back(h);
+    }
+    const std::string r = entryStudyLogRow(context(), "k", "p", "in-sample", 10, empty);
+
+    EXPECT_EQ(field(entryStudyLogHeader(), r, "events"), "0");
+    EXPECT_EQ(field(entryStudyLogHeader(), r, "h1_mean_atr"), "nan");
+    EXPECT_EQ(field(entryStudyLogHeader(), r, "target_first"), "nan");
+}
+
+TEST(ResultLog, TheEntryStudyLogHasItsOwnFile)
+{
+    EXPECT_STREQ(kEntryStudyLogFile, "entry_study_log.csv");
+}
+
+TEST(ResultLog, EntryControlRowCarriesBothArmsTheRandomMeanAndTheRanks)
+{
+    const std::string h = entryControlLogHeader();
+    const std::string r = entryControlLogRow(context(), "kijun", "period=141", ComponentRole::Filter, "atr_expansion",
+                                             "out-of-sample", 2, entryControlResult());
+
+    EXPECT_EQ(field(h, r, "role"), "filter");
+    EXPECT_EQ(field(h, r, "component"), "atr_expansion");
+    EXPECT_EQ(field(h, r, "data"), "out-of-sample");
+    EXPECT_EQ(field(h, r, "random_runs"), "2");
+    EXPECT_EQ(field(h, r, "with_events"), "300");
+    EXPECT_EQ(field(h, r, "without_events"), "400");
+    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "random_mean_events")), 260.0);
+    EXPECT_NEAR(std::stod(field(h, r, "h1_with")), 0.10, 1e-12);
+    EXPECT_NEAR(std::stod(field(h, r, "h1_without")), 0.02, 1e-12);
+    EXPECT_NEAR(std::stod(field(h, r, "h1_random")), 0.05, 1e-12);            // (0.04 + 0.06) / 2
+    EXPECT_NEAR(std::stod(field(h, r, "h5_with")), 0.13, 1e-12);              // the 4th horizon: 0.10 + 0.03
+    EXPECT_NEAR(std::stod(field(h, r, "h5_random")), 0.08, 1e-12);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "h5_beats")), 0.65);
+    EXPECT_NEAR(std::stod(field(h, r, "h40_with")), 0.16, 1e-12);
+    EXPECT_NEAR(std::stod(field(h, r, "h40_beats")), 0.8, 1e-12);
+    EXPECT_NEAR(std::stod(field(h, r, "race_with")), 0.2, 1e-12);
+    EXPECT_NEAR(std::stod(field(h, r, "race_without")), 0.04, 1e-12);
+    EXPECT_NEAR(std::stod(field(h, r, "race_random")), 0.1, 1e-12);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "race_beats")), 0.9);
+    EXPECT_NEAR(std::stod(field(h, r, "balance_with")), 1.0, 1e-12);
+    EXPECT_NEAR(std::stod(field(h, r, "balance_without")), 0.2, 1e-12);
+    EXPECT_NEAR(std::stod(field(h, r, "balance_random")), 0.5, 1e-12);
+    EXPECT_DOUBLE_EQ(std::stod(field(h, r, "balance_beats")), 0.8);
+    EXPECT_EQ(field(h, r, "behaviour"), "+1 51%, -1 49%, neutral 0%; keeps its state 87% of bars");
+}
+
+TEST(ResultLog, TheEntryControlLogHasItsOwnFile)
+{
+    EXPECT_STREQ(kEntryControlLogFile, "entry_control_log.csv");
 }

@@ -82,3 +82,21 @@ TEST(OrderTest, CloseOrderCanCarryAnotherReason)
 {
     EXPECT_EQ(closeOrder(3, ExitReason::Breakeven).reason, ExitReason::Breakeven);
 }
+
+// ---------- moving a stop ----------
+
+TEST(OrderTest, MoveStopOrderSetsTypeIdPriceAndReason)
+{
+    const Order o = moveStopOrder(7, 101.5, ExitReason::Trailing);
+
+    EXPECT_EQ(o.type, OrderType::MoveStop);
+    EXPECT_EQ(o.tradeId, 7);
+    ASSERT_TRUE(o.stopLoss.has_value());
+    EXPECT_DOUBLE_EQ(*o.stopLoss, 101.5);
+    EXPECT_EQ(o.reason, ExitReason::Trailing);
+}
+
+TEST(OrderTest, AMoveStopOrderIsAnOrdinaryStopLossByDefault)
+{
+    EXPECT_EQ(moveStopOrder(1, 99.0).reason, ExitReason::StopLoss);
+}

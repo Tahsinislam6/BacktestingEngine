@@ -8,6 +8,7 @@
 #include "cli.hpp"
 #include "component_control.hpp"
 #include "control.hpp"
+#include "entry_study.hpp"
 #include "screen.hpp"
 
 // The results log: one csv per type of test, rows only ever appended, so every test you run stays on record.
@@ -15,6 +16,8 @@
 //   screen_log.csv             one row per baseline per screen
 //   direction_control_log.csv  one row per data set (in-sample, out-of-sample) per direction control
 //   component_control_log.csv  one row per component per data set per component control
+//   entry_study_log.csv        one row per data set per entry study
+//   entry_control_log.csv      one row per component per data set per entry control
 //
 // Every row starts with the same six columns that say when and how the test was run (LogContext), then the
 // numbers. A file that already exists with different columns is never appended to (appendLog throws).
@@ -22,6 +25,8 @@
 inline constexpr const char* kScreenLogFile = "screen_log.csv";
 inline constexpr const char* kDirectionLogFile = "direction_control_log.csv";
 inline constexpr const char* kComponentLogFile = "component_control_log.csv";
+inline constexpr const char* kEntryStudyLogFile = "entry_study_log.csv";
+inline constexpr const char* kEntryControlLogFile = "entry_control_log.csv";
 
 struct LogContext
 {
@@ -56,3 +61,12 @@ std::string componentLogHeader();
 std::string componentLogRow(const LogContext& context, const std::string& baseline, const std::string& params,
                             ComponentRole role, const std::string& component, const std::string& data, int runs,
                             const ComponentControlResult& result);
+
+std::string entryStudyLogHeader();
+std::string entryStudyLogRow(const LogContext& context, const std::string& baseline, const std::string& params,
+                             const std::string& data, int runs, const EntryStudyResult& result);
+
+std::string entryControlLogHeader();
+std::string entryControlLogRow(const LogContext& context, const std::string& baseline, const std::string& params,
+                               ComponentRole role, const std::string& component, const std::string& data, int runs,
+                               const EntryControlResult& result);

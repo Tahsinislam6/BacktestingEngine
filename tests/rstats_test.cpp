@@ -22,6 +22,7 @@ ClosedTrade trade(double rMultiple, ExitReason reason = ExitReason::Signal, bool
     ClosedTrade c;
     c.trade.entryPrice = entry;
     c.trade.stopLoss = stop;
+    c.trade.initialStop = stop;
     c.trade.quantity = qty;
     if (hasTarget)
         c.trade.takeProfit = entry + 2;
@@ -75,6 +76,7 @@ TEST(RStatsTest, ShortTradesUseTheDistanceToTheStopAboveTheEntry)
     ClosedTrade c = trade(0);
     c.trade.direction = Direction::Short;
     c.trade.stopLoss = 103;                       // risk 10 * 3 = 30
+    c.trade.initialStop = 103;
     c.pnl = -30;
 
     EXPECT_DOUBLE_EQ(computeRReport({c}).all.totalR, -1.0);
@@ -173,8 +175,10 @@ TEST(RStatsTest, TradesWithoutAUsableStopAreLeftOutAndCounted)
 {
     ClosedTrade noStop = trade(1);
     noStop.trade.stopLoss.reset();
+    noStop.trade.initialStop.reset();
     ClosedTrade stopAtEntry = trade(1);
     stopAtEntry.trade.stopLoss = stopAtEntry.trade.entryPrice;
+    stopAtEntry.trade.initialStop = stopAtEntry.trade.entryPrice;
 
     const RReport r = computeRReport({trade(1), noStop, stopAtEntry});
 
@@ -194,4 +198,19 @@ TEST(RStatsTest, AFlipRunHasNoRMultiples)
 
     EXPECT_EQ(r.all.trades, 0);
     EXPECT_EQ(r.withoutStop, 2);
+}
+
+TEST(RStatsTest, RIsMeasuredFromTheStopTheTradeStartedWithNotTheMovedOne)
+{
+    // a runner whose stop was moved up to its entry: risk is still 10 * |100 - 97| = 30, so -3 of pnl is -0.1R
+    ClosedTrade c = trade(0, ExitReason::Breakeven);
+    c.trade.stopLoss = c.trade.entryPrice;          // moved to breakeven; initialStop stays 97
+    c.pnl = -3;
+
+    const RReport r = computeRReport({c});
+
+    EXPECT_EQ(r.withoutStop, 0);
+    EXPECT_EQ(r.all.trades, 1);
+    EXPECT_NEAR(r.all.totalR, -0.1, 1e-12);
+    EXPECT_EQ(r.all.breakeven.count, 1);
 }

@@ -37,6 +37,10 @@ struct CliOptions
     bool continuation{false};           // nnfx: re-enter while price stays on the same side of the baseline
     std::optional<double> maxOpenRisk;      // nnfx: cap on the total risk of open signals, as a share of equity
     std::optional<int> maxPerCurrency;      // nnfx: cap on net signals per currency
+    std::string signalKind;             // --signal kind:lookback: "breakout" or "momentum"; empty = the baseline study
+    int signalLookback{0};
+    int entryControl{0};                // nnfx: random stand-ins to compare each chosen confirmation / filter with, on the entry study; 0 = off
+    int entryStudy{0};                  // nnfx: random-direction runs for the entry study (what price does after a signal); 0 = off
     int componentControl{0};            // nnfx: random stand-ins to compare each chosen component with; 0 = off
     bool screen{false};                 // screen every baseline (nnfx, no cross-back exit, with the control)
     std::string screenCsv;              // optional: write the screen table here

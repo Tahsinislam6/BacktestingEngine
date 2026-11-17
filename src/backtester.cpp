@@ -14,7 +14,7 @@ namespace
         {
             // get worse price between bar open or stop loss
             double price = isLong ? std::min(*t.stopLoss, bar.open) : std::max(*t.stopLoss, bar.open);
-            portfolio.close(t.id, price, bar.timestamp, ExitReason::StopLoss);
+            portfolio.close(t.id, price, bar.timestamp, t.stopReason);
         }
         else if (targetHit)
         {
@@ -28,7 +28,12 @@ namespace
     {
         if (order.type == OrderType::Open)
             portfolio.open(order.direction, order.quantity, bar.close, bar.timestamp, order.stopLoss, order.takeProfit);
-        else 
+        else if (order.type == OrderType::MoveStop)
+        {
+            if (order.stopLoss)
+                portfolio.moveStop(order.tradeId, *order.stopLoss, order.reason);
+        }
+        else
             portfolio.close(order.tradeId, bar.close, bar.timestamp, order.reason);
     }
 }
