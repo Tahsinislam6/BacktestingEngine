@@ -241,3 +241,108 @@ TEST(CliTest, UsageMentionsTheCostOptions)
     for (const char* flag : {"--costs", "--spread-multiplier", "--no-costs"})
         EXPECT_NE(usage().find(flag), std::string::npos) << flag;
 }
+
+// ---------- mode ----------
+
+TEST(CliTest, ModeDefaultsToFlipAndCanBeNnfx)
+{
+    EXPECT_EQ(parse(base()).mode, Mode::Flip);
+    EXPECT_EQ(parse(with({"--mode", "nnfx"})).mode, Mode::Nnfx);
+    EXPECT_EQ(parse(with({"--mode", "flip"})).mode, Mode::Flip);
+}
+
+TEST(CliTest, ModeMustBeKnown)
+{
+    EXPECT_THROW(parse(with({"--mode", "hold"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--mode"})), std::invalid_argument);
+    EXPECT_NE(usage().find("--mode"), std::string::npos);
+}
+
+// ---------- control ----------
+
+TEST(CliTest, ControlAndNoCrossExitAreOffByDefault)
+{
+    const CliOptions o = parse(base());
+    EXPECT_EQ(o.control, 0);
+    EXPECT_FALSE(o.noCrossExit);
+}
+
+TEST(CliTest, ReadsTheControlOptions)
+{
+    const CliOptions o = parse(with({"--mode", "nnfx", "--no-cross-exit", "--control", "100"}));
+
+    EXPECT_EQ(o.control, 100);
+    EXPECT_TRUE(o.noCrossExit);
+}
+
+TEST(CliTest, TheControlNeedsNnfxModeAndNoCrossExit)
+{
+    EXPECT_THROW(parse(with({"--control", "50"})), std::invalid_argument);                       // flip mode
+    EXPECT_THROW(parse(with({"--mode", "nnfx", "--control", "50"})), std::invalid_argument);     // cross-back exit on
+    EXPECT_THROW(parse(with({"--no-cross-exit"})), std::invalid_argument);                       // flip mode
+    EXPECT_NO_THROW(parse(with({"--mode", "nnfx", "--no-cross-exit"})));
+}
+
+TEST(CliTest, TheControlCountMustBeAWholeNumber)
+{
+    EXPECT_THROW(parse(with({"--mode", "nnfx", "--no-cross-exit", "--control", "-1"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--mode", "nnfx", "--no-cross-exit", "--control", "x"})), std::invalid_argument);
+}
+
+TEST(CliTest, UsageMentionsTheControlOptions)
+{
+    EXPECT_NE(usage().find("--control"), std::string::npos);
+    EXPECT_NE(usage().find("--no-cross-exit"), std::string::npos);
+}
+
+// ---------- screen ----------
+
+TEST(CliTest, ScreenIsOffByDefaultWithTheUsualThresholds)
+{
+    const CliOptions o = parse(base());
+    EXPECT_FALSE(o.screen);
+    EXPECT_TRUE(o.screenCsv.empty());
+    EXPECT_DOUBLE_EQ(o.minBeats, 0.9);
+    EXPECT_DOUBLE_EQ(o.minExpectancy, 0.03);
+}
+
+TEST(CliTest, ReadsTheScreenOptions)
+{
+    const CliOptions o = parse({"--screen", "--insample", "a", "--outsample", "b", "--screen-csv", "s.csv",
+                                "--min-beats", "0.8", "--min-expectancy", "0.05", "--control", "100"});
+
+    EXPECT_TRUE(o.screen);
+    EXPECT_EQ(o.screenCsv, "s.csv");
+    EXPECT_DOUBLE_EQ(o.minBeats, 0.8);
+    EXPECT_DOUBLE_EQ(o.minExpectancy, 0.05);
+    EXPECT_EQ(o.control, 100);
+}
+
+TEST(CliTest, ScreenNeedsOutOfSampleData)
+{
+    EXPECT_THROW(parse({"--screen", "--insample", "a"}), std::invalid_argument);
+}
+
+TEST(CliTest, ScreenCannotBeCombinedWithABaselineOrAMode)
+{
+    EXPECT_THROW(parse({"--screen", "--insample", "a", "--outsample", "b", "--baseline", "sma"}), std::invalid_argument);
+    EXPECT_THROW(parse({"--screen", "--insample", "a", "--outsample", "b", "--mode", "flip"}), std::invalid_argument);
+}
+
+TEST(CliTest, TheScreenThresholdsAreChecked)
+{
+    EXPECT_THROW(parse({"--screen", "--insample", "a", "--outsample", "b", "--min-beats", "1.5"}), std::invalid_argument);
+    EXPECT_THROW(parse({"--screen", "--insample", "a", "--outsample", "b", "--min-beats", "-0.1"}), std::invalid_argument);
+    EXPECT_THROW(parse({"--screen", "--insample", "a", "--outsample", "b", "--min-expectancy", "x"}), std::invalid_argument);
+}
+
+TEST(CliTest, ScreenCsvNeedsScreen)
+{
+    EXPECT_THROW(parse(with({"--screen-csv", "s.csv"})), std::invalid_argument);
+}
+
+TEST(CliTest, UsageMentionsTheScreenOptions)
+{
+    for (const char* flag : {"--screen", "--screen-csv", "--min-beats", "--min-expectancy"})
+        EXPECT_NE(usage().find(flag), std::string::npos) << flag;
+}

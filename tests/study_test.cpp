@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -270,4 +271,84 @@ TEST(FormatStudyTest, TheTopCountLimitsTheRankedRows)
     EXPECT_NE(two.find("level=50"), std::string::npos);
     EXPECT_NE(two.find("level=70"), std::string::npos);
     EXPECT_EQ(two.find("level=150"), std::string::npos);
+}
+
+// ---------- R-multiples ----------
+
+namespace
+{
+// Opens a long pair on the first snapshot: a half with stop 90 and target 120, a runner with stop 90.
+class PairOnce : public MultiStrategy
+{
+public:
+    std::vector<Order> onSnapshot(const Snapshot&, const Portfolio&) override
+    {
+        if (done_)
+            return {};
+        done_ = true;
+        return {openOrder(Direction::Long, 1, 90.0, 120.0, 0), openOrder(Direction::Long, 1, 90.0, std::nullopt, 0)};
+    }
+private:
+    bool done_{false};
+};
+
+const StrategyFactory pairFactory = [](const Params&, std::size_t) -> std::unique_ptr<MultiStrategy>
+{
+    return std::make_unique<PairOnce>();
+};
+}
+
+TEST(StudyTest, WithStopsTheWinnerComesWithRMultiples)
+{
+    // rising 100, 102, ... : entry at 100, stop 90 (risk 10), the target 120 is hit at 120 -> +2R for that half
+    const AlignedData out = rising();
+    const StudyResult s = runStudy(rising(), &out, {{"x", 1, 1, 1}}, pairFactory, options());
+
+    ASSERT_TRUE(s.inSampleR.has_value());
+    EXPECT_EQ(s.inSampleR->all.target.count, 1);
+    EXPECT_NEAR(s.inSampleR->targetHalf.totalR, 2.0, 1e-9);
+    ASSERT_TRUE(s.outOfSampleR.has_value());
+    EXPECT_EQ(s.outOfSampleR->all.target.count, 1);
+}
+
+TEST(StudyTest, WithoutStopsThereAreNoRMultiples)
+{
+    const StudyResult s = runStudy(rising(), nullptr, ranges, factory, options());
+
+    EXPECT_FALSE(s.inSampleR.has_value());
+    EXPECT_FALSE(s.outOfSampleR.has_value());
+}
+
+TEST(FormatStudyTest, ShowsTheRMultiplesWhenThereAreStops)
+{
+    const AlignedData out = rising();
+    const StudyOptions o = options();
+
+    const std::string text = formatStudy(runStudy(rising(), &out, {{"x", 1, 1, 1}}, pairFactory, o), o, 5);
+
+    EXPECT_NE(text.find("R-MULTIPLES"), std::string::npos);
+    EXPECT_NE(text.find("target half"), std::string::npos);
+    EXPECT_NE(text.find("runner"), std::string::npos);
+    EXPECT_NE(text.find("stop"), std::string::npos);
+    EXPECT_NE(text.find("breakeven"), std::string::npos);
+    EXPECT_NE(text.find("trailing"), std::string::npos);
+    EXPECT_NE(text.find("still open"), std::string::npos);
+}
+
+TEST(StudyTest, TradesStillOpenAtTheEndAreCounted)
+{
+    // PairOnce: the target half closes at 120; the runner is still open when the data ends
+    const StudyResult s = runStudy(rising(), nullptr, {{"x", 1, 1, 1}}, pairFactory, options());
+
+    ASSERT_TRUE(s.inSampleR.has_value());
+    EXPECT_EQ(s.inSampleR->openAtEnd, 1);
+}
+
+TEST(FormatStudyTest, LeavesOutTheRMultiplesWithoutStops)
+{
+    const StudyOptions o = options();
+
+    const std::string text = formatStudy(runStudy(rising(), nullptr, ranges, factory, o), o, 5);
+
+    EXPECT_EQ(text.find("R-MULTIPLES"), std::string::npos);
 }

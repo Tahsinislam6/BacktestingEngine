@@ -76,7 +76,7 @@ namespace
                 return;   // that asset has no bar today: the trade stays open
 
             portfolio.close(order.tradeId, exitFill(it->direction, bar->close, halfSpread(spreads, it->asset)),
-                            bar->timestamp, ExitReason::Signal);
+                            bar->timestamp, order.reason);
         }
     }
 }

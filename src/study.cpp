@@ -18,7 +18,8 @@ namespace
 
     // Run one parameter set over a whole dataset and report it, asset by asset.
     void runWhole(const AlignedData& data, const Params& params, const StrategyFactory& factory,
-                  const GridOptions& grid, Evaluation& evaluation, std::vector<AssetReport>& assets)
+                  const GridOptions& grid, Evaluation& evaluation, std::vector<AssetReport>& assets,
+                  std::optional<RReport>& rReport)
     {
         const WindowRun run = runWindow(data, params, factory, {0, data.snapshots.size(), 0}, grid);
 
@@ -28,6 +29,35 @@ namespace
 
         assets = perAssetReport(data, run.result, zigzagAll(data, grid.zigzagMultiple, grid.atrPeriod),
                                 spreadsFor(grid.costs, data.symbols));
+
+        RReport r = computeRReport(run.result.closedTrades, static_cast<int>(run.result.openTrades.size()));
+        rReport = r.all.trades > 0 ? std::optional<RReport>(r) : std::nullopt;
+    }
+
+    std::string rRow(const char* label, const RStats& s)
+    {
+        return fmt("  %-12s %6d %7s %9s %9s %11s %9s\n", label, s.trades, pct(s.winRate).c_str(),
+                   num(s.avgWinR).c_str(), num(s.avgLossR).c_str(), num(s.expectancyR).c_str(),
+                   num(s.totalR).c_str());
+    }
+
+    std::string exitText(const char* label, const ExitStats& e)
+    {
+        return fmt("%s %d (%s R avg)", label, e.count, e.count > 0 ? num(e.avgR()).c_str() : "-");
+    }
+
+    // 1R = the amount a trade risked to its stop.
+    std::string rTable(const char* title, const RReport& r)
+    {
+        std::string out = fmt("  R-MULTIPLES, %s (1R = the amount risked to the stop):\n", title);
+        out += fmt("  %-12s %6s %7s %9s %9s %11s %9s\n", "", "trades", "win", "avg win", "avg loss", "expectancy",
+                   "total R");
+        out += rRow("all", r.all) + rRow("target half", r.targetHalf) + rRow("runner", r.runner);
+        out += "  exits: " + exitText("stop", r.all.stop) + " | " + exitText("target", r.all.target) + " | " +
+               exitText("breakeven", r.all.breakeven) + " | " + exitText("trailing", r.all.trailing) + " | " +
+               exitText("cross-back", r.all.signal) + "\n";
+        out += fmt("  %d trades were still open when the data ended and are not counted above.\n", r.openAtEnd);
+        return out;
     }
 }
 
@@ -61,12 +91,12 @@ StudyResult runStudy(const AlignedData& inSample, const AlignedData* outOfSample
         const Params& winner = out.ranking[0].evaluation.params;
 
         Evaluation unused;
-        runWhole(inSample, winner, factory, optimise.grid, unused, out.inSampleAssets);
+        runWhole(inSample, winner, factory, optimise.grid, unused, out.inSampleAssets, out.inSampleR);
 
         if (outOfSample)
         {
             Evaluation e;
-            runWhole(*outOfSample, winner, factory, optimise.grid, e, out.outOfSampleAssets);
+            runWhole(*outOfSample, winner, factory, optimise.grid, e, out.outOfSampleAssets, out.outOfSampleR);
             out.outOfSample = e;
         }
     }
@@ -101,6 +131,8 @@ std::string formatStudy(const StudyResult& s, const StudyOptions& options, std::
                        s.stability->neighbours);
     }
     out += "  Per asset (in-sample):\n" + assetTable(s.inSampleAssets);
+    if (s.inSampleR)
+        out += rTable("winner, in-sample", *s.inSampleR);
 
     out += fmt("\nTIME SPLIT (train on the first %.0f%% of the years, test on the rest):\n",
                100.0 * options.trainFraction);
@@ -133,6 +165,8 @@ std::string formatStudy(const StudyResult& s, const StudyOptions& options, std::
                    pct(e.metrics.totalReturn).c_str(), num(e.metrics.sharpe).c_str(),
                    pct(e.metrics.maxDrawdown).c_str(), e.metrics.trades, num(e.capture.efficiency).c_str());
         out += assetTable(s.outOfSampleAssets);
+        if (s.outOfSampleR)
+            out += rTable("winner, out-of-sample", *s.outOfSampleR);
     }
     return out;
 }

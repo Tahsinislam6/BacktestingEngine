@@ -29,7 +29,7 @@ namespace
         if (order.type == OrderType::Open)
             portfolio.open(order.direction, order.quantity, bar.close, bar.timestamp, order.stopLoss, order.takeProfit);
         else 
-            portfolio.close(order.tradeId, bar.close, bar.timestamp, ExitReason::Signal);
+            portfolio.close(order.tradeId, bar.close, bar.timestamp, order.reason);
     }
 }
 

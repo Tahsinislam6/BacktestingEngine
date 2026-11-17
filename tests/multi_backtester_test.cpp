@@ -890,3 +890,24 @@ TEST(SpreadTest, TakeProfitExitsOfAShortAreWorseByHalfASpreadToo)
     EXPECT_EQ(r.closedTrades[0].reason, ExitReason::TakeProfit);
     EXPECT_DOUBLE_EQ(r.closedTrades[0].exitPrice, 91.0);   // 90 + half spread
 }
+
+// ---------- the reason of a close order ----------
+
+TEST(CloseReasonTest, ACloseOrderGivesItsReasonToTheClosedTrade)
+{
+    const AlignedData d = makeData(1, {snap(1, {flatBar(1, 100)}), snap(2, {flatBar(2, 100)})});
+    ScriptedMulti s({{openOrder(Direction::Long, 1, std::nullopt, std::nullopt, 0)}, {closeOrder(1, ExitReason::Breakeven)}});
+
+    const BacktestResult r = runMultiBacktest(d, s, kCash);
+
+    ASSERT_EQ(r.closedTrades.size(), 1u);
+    EXPECT_EQ(r.closedTrades[0].reason, ExitReason::Breakeven);
+}
+
+TEST(CloseReasonTest, ADefaultCloseOrderIsASignalExit)
+{
+    const AlignedData d = makeData(1, {snap(1, {flatBar(1, 100)}), snap(2, {flatBar(2, 100)})});
+    ScriptedMulti s({{openOrder(Direction::Long, 1, std::nullopt, std::nullopt, 0)}, {closeOrder(1)}});
+
+    EXPECT_EQ(runMultiBacktest(d, s, kCash).closedTrades[0].reason, ExitReason::Signal);
+}

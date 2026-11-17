@@ -105,3 +105,9 @@ node_modules/
 
 # ---- Other ----
 *.csv
+
+# ---- Baselines: every header in include/baselines/ stays local ----
+include/baselines/*
+tests/baselines_test.cpp
+tests/ema_test.cpp
+tests/kijun_test.cpp

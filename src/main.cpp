@@ -1,72 +1,16 @@
-#include <deque>
-#include <functional>
+#include <algorithm>
 #include <iostream>
-#include <map>
-#include <memory>
 
+#include "baseline_registry.hpp"
 #include "cli.hpp"
+#include "control.hpp"
 #include "costs.hpp"
 #include "dataset.hpp"
-#include "flip_strategy.hpp"
+#include "screen.hpp"
 #include "study.hpp"
 
-// ---------------------------------------------------------------------------------------------
-// Baselines
-//
-// A baseline is any class with update(const Bar&), ready() and value() (the price of its line).
-// To optimise your own: write the class, then add ONE entry to registry() below with
-//   - the parameter ranges to search
-//   - a factory that builds the strategy for one set of parameters
-//   - how many bars of history one set needs before it is ready (its warm-up)
-// ---------------------------------------------------------------------------------------------
-
-// STAND-IN baseline so the program runs end to end: a plain moving average of the close.
-// Replace it with your own indicators.
-class SimpleMovingAverage
-{
-public:
-    explicit SimpleMovingAverage(int period) : period_(period) {}
-
-    void update(const Bar& bar)
-    {
-        window_.push_back(bar.close);
-        sum_ += bar.close;
-        if (static_cast<int>(window_.size()) > period_)
-        {
-            sum_ -= window_.front();
-            window_.pop_front();
-        }
-    }
-    bool ready() const { return static_cast<int>(window_.size()) >= period_; }
-    double value() const { return sum_ / static_cast<double>(window_.size()); }
-
-private:
-    int period_;
-    std::deque<double> window_;
-    double sum_{0.0};
-};
-
-struct BaselineSpec
-{
-    std::vector<ParamRange> ranges;
-    StrategyFactory factory;
-    std::function<std::size_t(const Params&)> warmupBars;
-};
-
-static std::map<std::string, BaselineSpec> registry()
-{
-    std::map<std::string, BaselineSpec> r;
-
-    r["sma"] = {
-        {{"period", 5, 100, 5}},
-        [](const Params& p, std::size_t assets) -> std::unique_ptr<MultiStrategy>
-        {
-            return std::make_unique<FlipStrategy<SimpleMovingAverage>>(assets, SimpleMovingAverage(p.getInt("period")));
-        },
-        [](const Params& p) { return static_cast<std::size_t>(p.getInt("period")); }};
-
-    return r;
-}
+// Baselines are not listed here: every file in include/baselines/ is found automatically
+// (see baseline_registry.hpp and CLAUDE.md).
 
 int main(int argc, char** argv)
 {
@@ -75,21 +19,24 @@ int main(int argc, char** argv)
         const CliOptions cli = parseArgs(std::vector<std::string>(argv + 1, argv + argc));
         if (cli.help)
         {
-            std::cout << usage();
+            std::cout << usage() << "\nBaselines: " << baselineNames() << "\n";
             return 0;
         }
 
-        const std::map<std::string, BaselineSpec> baselines = registry();
-        auto spec = baselines.find(cli.baseline);
-        if (spec == baselines.end())
+        const BaselineInfo* baseline = cli.screen ? nullptr : findBaseline(cli.baseline);
+        if (!cli.screen && !baseline)
+            throw std::invalid_argument("unknown baseline '" + cli.baseline + "' (available: " + baselineNames() + ")");
+
+        NnfxOptions nnfx;
+        nnfx.exitOnCross = !cli.noCrossExit && !cli.screen;
+        StudyOptions study;
+        StrategyFactory factory;
+        if (baseline)
         {
-            std::string names;
-            for (const auto& entry : baselines)
-                names += (names.empty() ? "" : ", ") + entry.first;
-            throw std::invalid_argument("unknown baseline '" + cli.baseline + "' (available: " + names + ")");
+            factory = cli.mode == Mode::Nnfx ? baseline->nnfx(nnfx) : baseline->flip;
+            study.validation.warmupBars = cli.mode == Mode::Nnfx ? nnfxWarmupBars(*baseline, nnfx) : baseline->warmupBars;
         }
 
-        StudyOptions study;
         study.validation.optimise.objective = cli.objective;
         study.validation.optimise.minTrades = cli.minTrades;
         study.validation.optimise.grid.threads = cli.threads;
@@ -102,12 +49,38 @@ int main(int argc, char** argv)
             costs.multiplier = cli.spreadMultiplier;
             study.validation.optimise.grid.costs = costs;
         }
-        study.validation.warmupBars = spec->second.warmupBars;
         study.trainFraction = cli.trainFraction;
         study.walkTrainBars = cli.walkTrain;
         study.walkTestBars = cli.walkTest;
 
         const AlignedData inSample = loadFolder(cli.inSampleDir, !cli.keepSundays);
+
+        if (cli.screen)
+        {
+            const AlignedData outOfSample = loadFolder(cli.outSampleDir, !cli.keepSundays);
+            std::cout << "In-sample: " << inSample.symbols.size() << " assets, " << inSample.snapshots.size()
+                      << " days; out-of-sample: " << outOfSample.symbols.size() << " assets, "
+                      << outOfSample.snapshots.size() << " days\n\n";
+
+            ScreenOptions screen;
+            screen.study = study;
+            screen.nnfx = nnfx;
+            screen.controlRuns = cli.control > 0 ? cli.control : 200;
+            screen.minBeats = cli.minBeats;
+            screen.minExpectancy = cli.minExpectancy;
+
+            const std::vector<ScreenRow> rows = screenBaselines(baselineRegistry(), inSample, outOfSample, screen);
+            std::cout << screenTable(rows, screen);
+            if (!cli.screenCsv.empty())
+            {
+                writeTextFile(cli.screenCsv, screenCsv(rows));
+                std::cout << "\nScreen written to " << cli.screenCsv << "\n";
+            }
+            return 0;
+        }
+
+        std::cout << "Baseline: " << baseline->name << " ("
+                  << (cli.mode == Mode::Nnfx ? (cli.noCrossExit ? "nnfx, no cross-back exit" : "nnfx") : "flip") << ")\n";
         std::cout << "In-sample: " << inSample.symbols.size() << " assets, " << inSample.snapshots.size() << " days\n";
 
         AlignedData outOfSample;
@@ -120,8 +93,19 @@ int main(int argc, char** argv)
         std::cout << "\n";
 
         const StudyResult result = runStudy(inSample, cli.outSampleDir.empty() ? nullptr : &outOfSample,
-                                            spec->second.ranges, spec->second.factory, study);
+                                            baseline->ranges, factory, study);
         std::cout << formatStudy(result, study, cli.top);
+
+        if (cli.control > 0 && !result.ranking.empty())
+        {
+            const Params& winner = result.ranking[0].evaluation.params;
+            const GridOptions& grid = study.validation.optimise.grid;
+            std::cout << "\nDIRECTION CONTROL (winner " << paramsText(winner) << "; the winner was tuned on the in-sample data, "
+                         "so only the out-of-sample line is a fair test)\n";
+            std::cout << formatControl("in-sample", runDirectionControl(inSample, winner, baseline->nnfx, nnfx, cli.control, grid));
+            if (!cli.outSampleDir.empty())
+                std::cout << formatControl("out-of-sample", runDirectionControl(outOfSample, winner, baseline->nnfx, nnfx, cli.control, grid));
+        }
 
         if (!cli.csvOut.empty())
         {

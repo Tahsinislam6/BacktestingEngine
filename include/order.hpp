@@ -16,6 +16,7 @@ struct Order
     std::optional<double> takeProfit;
 
     int tradeId{};
+    ExitReason reason{ExitReason::Signal};   // for a Close order: what the closed trade is recorded as
 };
 
 inline Order openOrder(Direction d, double qty,
@@ -33,10 +34,11 @@ inline Order openOrder(Direction d, double qty,
     return o;
 }            
 
-inline Order closeOrder(int tradeId)
+inline Order closeOrder(int tradeId, ExitReason reason = ExitReason::Signal)
 {
     Order o;
     o.type = OrderType::Close;
     o.tradeId = tradeId;
+    o.reason = reason;
     return o;
 }

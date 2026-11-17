@@ -17,7 +17,10 @@ struct Trade
     std::optional<double> takeProfit;
 };
 
-enum class ExitReason {Signal, StopLoss, TakeProfit};
+// Signal = closed by the strategy (e.g. the baseline crossed back); Breakeven = the strategy closed a runner
+// that came back to its entry after the target half was taken; Trailing = the strategy closed a runner whose
+// close fell back from its best by a multiple of the ATR.
+enum class ExitReason {Signal, StopLoss, TakeProfit, Breakeven, Trailing};
 
 struct ClosedTrade
 {

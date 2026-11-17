@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "report.hpp"
+#include "rstats.hpp"
 #include "validation.hpp"
 
 // The whole workflow for one baseline:
@@ -33,8 +34,10 @@ struct StudyResult
     TrainTestResult timeSplit;
     std::optional<WalkForwardResult> walkForward;       // empty if skipped
     std::vector<AssetReport> inSampleAssets;            // the winner, per in-sample asset
+    std::optional<RReport> inSampleR;                   // the winner's R-multiples; empty if its trades have no stops
     std::optional<Evaluation> outOfSample;              // the winner on the out-of-sample assets
     std::vector<AssetReport> outOfSampleAssets;
+    std::optional<RReport> outOfSampleR;
 };
 
 // `outOfSample` may be null (then step 4 is skipped). Both datasets must be non-copied references that

@@ -29,6 +29,13 @@ namespace
         return v;
     }
 
+    Mode toMode(const std::string& text)
+    {
+        if (text == "flip") return Mode::Flip;
+        if (text == "nnfx") return Mode::Nnfx;
+        throw std::invalid_argument("--mode must be flip or nnfx, got '" + text + "'");
+    }
+
     Objective toObjective(const std::string& text)
     {
         if (text == "sharpe")  return Objective::Sharpe;
@@ -43,7 +50,7 @@ namespace
 CliOptions parseArgs(const std::vector<std::string>& args)
 {
     CliOptions o;
-    bool multiplierGiven = false;
+    bool multiplierGiven = false, modeGiven = false, baselineGiven = false;
 
     for (std::size_t i = 0; i < args.size(); ++i)
     {
@@ -57,6 +64,18 @@ CliOptions parseArgs(const std::vector<std::string>& args)
         if (flag == "--keep-sundays")
         {
             o.keepSundays = true;
+            continue;
+        }
+
+        if (flag == "--screen")
+        {
+            o.screen = true;
+            continue;
+        }
+
+        if (flag == "--no-cross-exit")
+        {
+            o.noCrossExit = true;
             continue;
         }
 
@@ -74,7 +93,8 @@ CliOptions parseArgs(const std::vector<std::string>& args)
             return args[++i];
         };
 
-        if (flag == "--baseline")            o.baseline = value();
+        if (flag == "--baseline")            { o.baseline = value(); baselineGiven = true; }
+        else if (flag == "--mode")           { o.mode = toMode(value()); modeGiven = true; }
         else if (flag == "--insample")       o.inSampleDir = value();
         else if (flag == "--outsample")      o.outSampleDir = value();
         else if (flag == "--csv")            o.csvOut = value();
@@ -90,6 +110,15 @@ CliOptions parseArgs(const std::vector<std::string>& args)
             if (!(o.trainFraction > 0.0 && o.trainFraction < 1.0))
                 throw std::invalid_argument("--train-fraction must be between 0 and 1");
         }
+        else if (flag == "--screen-csv")     o.screenCsv = value();
+        else if (flag == "--min-beats")
+        {
+            o.minBeats = toDouble(flag, value());
+            if (!(o.minBeats >= 0.0 && o.minBeats <= 1.0))
+                throw std::invalid_argument("--min-beats must be between 0 and 1");
+        }
+        else if (flag == "--min-expectancy") o.minExpectancy = toDouble(flag, value());
+        else if (flag == "--control")        o.control = static_cast<int>(toWholeNumber(flag, value(), 0));
         else if (flag == "--costs")          o.costsFile = value();
         else if (flag == "--spread-multiplier")
         {
@@ -112,6 +141,21 @@ CliOptions parseArgs(const std::vector<std::string>& args)
         return o;
     if (o.inSampleDir.empty())
         throw std::invalid_argument("--insample is required");
+    if (!o.screenCsv.empty() && !o.screen)
+        throw std::invalid_argument("--screen-csv needs --screen");
+    if (o.screen)
+    {
+        if (o.outSampleDir.empty())
+            throw std::invalid_argument("--screen needs --outsample (the verdict is based on data the winner was not tuned on)");
+        if (baselineGiven || modeGiven)
+            throw std::invalid_argument("--screen runs every baseline in nnfx mode; do not combine it with --baseline or --mode");
+    }
+    else if (o.noCrossExit && o.mode != Mode::Nnfx)
+        throw std::invalid_argument("--no-cross-exit only applies with --mode nnfx");
+    if (!o.screen && o.control > 0 && o.mode != Mode::Nnfx)
+        throw std::invalid_argument("--control only applies with --mode nnfx");
+    if (!o.screen && o.control > 0 && !o.noCrossExit)
+        throw std::invalid_argument("--control needs --no-cross-exit (a random trade may start against the line)");
     if (o.noCosts && (!o.costsFile.empty() || multiplierGiven))
         throw std::invalid_argument("--no-costs cannot be combined with --costs or --spread-multiplier");
     if ((o.walkTrain > 0) != (o.walkTest > 0))
@@ -127,6 +171,14 @@ std::string usage()
         "  --insample <folder>      folder of .csv files used to choose the parameters (required)\n"
         "  --outsample <folder>     folder of .csv files the winner is tested on once, never tuned on\n"
         "  --baseline <name>        which baseline to optimise (default: sma)\n"
+        "  --mode <name>            flip (default: always in the market) or nnfx (NNFX entries, stops, targets)\n"
+        "  --screen                 screen EVERY baseline: nnfx without the cross-back exit, winner tested out-of-sample\n"
+        "                           against random directions; needs --outsample (--control sets the runs, default 200)\n"
+        "  --screen-csv <file>      write the screen table as csv\n"
+        "  --min-beats <x>          screen: share of random runs a candidate must beat (default 0.9)\n"
+        "  --min-expectancy <x>     screen: expectancy in R a candidate must reach (default 0.03)\n"
+        "  --no-cross-exit          nnfx: do not close when the baseline crosses back (stop, target, breakeven only)\n"
+        "  --control <n>            nnfx: compare the winner's direction with n random-direction runs (needs --no-cross-exit)\n"
         "  --objective <name>       sharpe (default), sortino, calmar, return or capture\n"
         "  --min-trades <n>         ignore parameter sets with fewer closed trades (default 30)\n"
         "  --train-fraction <x>     share of the years used for training in the time split (default 0.7)\n"
