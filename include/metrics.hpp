@@ -16,7 +16,10 @@ struct Metrics
     int    trades{};
     double winRate{};          
     double profitFactor{};     
-    double expectancy{};       
+    double expectancy{};       // the average pnl per trade, in account money
+    double expectancyR{};      // the average of pnl / initial risk, where risk = |entry - initialStop| x quantity (a trade that
+                               // lost exactly its stop is -1R); trades with no initial stop or no risk are left out
+    int    tradesWithRisk{};   // how many trades expectancyR is the average of
     double avgHoldingTime{};   // in the data's timestamp units (milliseconds); see kTimestampUnitsPerDay
 };
 
