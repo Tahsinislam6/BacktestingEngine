@@ -268,10 +268,10 @@ TEST(CliTest, ReadsTheControlOptions)
     EXPECT_TRUE(o.noCrossExit);
 }
 
-TEST(CliTest, TheControlNeedsNoCrossExit)
+TEST(CliTest, TheControlWorksWithOrWithoutTheCrossBackExit)
 {
-    EXPECT_THROW(parse(with({"--control", "50"})), std::invalid_argument);
-    EXPECT_NO_THROW(parse(with({"--no-cross-exit"})));
+    EXPECT_NO_THROW(parse(with({"--control", "50"})));
+    EXPECT_NO_THROW(parse(with({"--no-cross-exit", "--control", "50"})));
 }
 
 TEST(CliTest, TheControlCountMustBeAWholeNumber)
@@ -623,4 +623,115 @@ TEST(CliTest, UsageMentionsTheSwapOptions)
 {
     for (const char* flag : {"--rates", "--swap-markup"})
         EXPECT_NE(usage().find(flag), std::string::npos) << flag;
+}
+
+// ---------- no scaling out ----------
+
+TEST(CliTest, ScalingOutIsOnByDefault)
+{
+    EXPECT_FALSE(parse(bareWith({"--filter", "atr_expansion"})).noScaling);
+}
+
+TEST(CliTest, ReadsNoScaling)
+{
+    EXPECT_TRUE(parse(with({"--no-scaling"})).noScaling);
+}
+
+TEST(CliTest, UsageMentionsNoScaling)
+{
+    EXPECT_NE(usage().find("--no-scaling"), std::string::npos);
+}
+
+TEST(CliTest, ReadsTrailAfter)
+{
+    EXPECT_FALSE(parse(bareWith({"--filter", "atr_expansion"})).trailAfter.has_value());
+    const CliOptions o = parse(with({"--trail-after", "2"}));
+    ASSERT_TRUE(o.trailAfter.has_value());
+    EXPECT_DOUBLE_EQ(*o.trailAfter, 2.0);
+}
+
+TEST(CliTest, TrailAfterMustBePositive)
+{
+    EXPECT_THROW(parse(with({"--trail-after", "0"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--trail-after", "-1"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--trail-after", "x"})), std::invalid_argument);
+}
+
+TEST(CliTest, UsageMentionsTrailAfter)
+{
+    EXPECT_NE(usage().find("--trail-after"), std::string::npos);
+}
+
+// ---------- stop, ATR period, risk, trailing and the grid's exit ----------
+
+TEST(CliTest, TheStopAndSizeOptionsAreOffByDefault)
+{
+    const CliOptions o = parse(bareWith({"--filter", "atr_expansion"}));
+    EXPECT_FALSE(o.stopAtr.has_value());
+    EXPECT_FALSE(o.atrPeriod.has_value());
+    EXPECT_FALSE(o.risk.has_value());
+    EXPECT_FALSE(o.noTrail);
+    EXPECT_FALSE(o.crossExit);
+}
+
+TEST(CliTest, TheChaseLimitOptions)
+{
+    const CliOptions none = parse(with({}));
+    EXPECT_FALSE(none.maxDistance.has_value());
+    EXPECT_FALSE(none.noChaseLimit);
+
+    const CliOptions v = parse(with({"--max-distance", "3.5"}));
+    ASSERT_TRUE(v.maxDistance.has_value());
+    EXPECT_DOUBLE_EQ(*v.maxDistance, 3.5);
+    EXPECT_TRUE(parse(with({"--no-chase-limit"})).noChaseLimit);
+
+    EXPECT_THROW(parse(with({"--max-distance", "0"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--max-distance", "-1"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--max-distance", "2", "--no-chase-limit"})), std::invalid_argument);
+}
+
+TEST(CliTest, ReadsTheStopAndSizeOptions)
+{
+    const CliOptions o = parse(with({"--stop-atr", "2.5", "--atr-period", "20", "--risk", "0.0025", "--no-trail"}));
+    ASSERT_TRUE(o.stopAtr.has_value());
+    EXPECT_DOUBLE_EQ(*o.stopAtr, 2.5);
+    ASSERT_TRUE(o.atrPeriod.has_value());
+    EXPECT_EQ(*o.atrPeriod, 20);
+    ASSERT_TRUE(o.risk.has_value());
+    EXPECT_DOUBLE_EQ(*o.risk, 0.0025);
+    EXPECT_TRUE(o.noTrail);
+}
+
+TEST(CliTest, TheStopAndSizeOptionsAreChecked)
+{
+    for (const char* bad : {"0", "-1", "x"})
+    {
+        EXPECT_THROW(parse(with({"--stop-atr", bad})), std::invalid_argument) << bad;
+        EXPECT_THROW(parse(with({"--risk", bad})), std::invalid_argument) << bad;
+    }
+    EXPECT_THROW(parse(with({"--risk", "0.6"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--atr-period", "0"})), std::invalid_argument);
+    EXPECT_THROW(parse(with({"--atr-period", "x"})), std::invalid_argument);
+}
+
+TEST(CliTest, UsageMentionsTheStopAndSizeOptions)
+{
+    for (const char* flag : {"--stop-atr", "--atr-period", "--risk", "--no-trail", "--cross-exit"})
+        EXPECT_NE(usage().find(flag), std::string::npos) << flag;
+}
+
+TEST(CliTest, TheC1ExitSwitchNeedsTheGrid)
+{
+    EXPECT_FALSE(parse(gridRun({})).c1Exit);
+    EXPECT_THROW(parse(with({"--c1-exit"})), std::invalid_argument);
+    EXPECT_THROW(parse(gridRun({"--exit-indicator", "rsi"})), std::invalid_argument);    // the grid already refuses its own exit indicator
+    EXPECT_TRUE(parse(gridRun({"--c1-exit"})).c1Exit);
+}
+
+TEST(CliTest, TheGridsCrossExitSwitchNeedsTheGridAndExcludesNoCrossExit)
+{
+    EXPECT_THROW(parse(with({"--cross-exit"})), std::invalid_argument);
+    EXPECT_THROW(parse(gridRun({"--cross-exit", "--no-cross-exit"})), std::invalid_argument);
+    const CliOptions o = parse(gridRun({"--cross-exit"}));
+    EXPECT_TRUE(o.crossExit);
 }

@@ -71,6 +71,26 @@ std::string setupText(const CliOptions& cli)
         s += " one-candle";
     if (cli.continuation)
         s += " continuation";
+    if (cli.trailAfter)
+        s += " trail-after=" + num(*cli.trailAfter);
+    if (cli.noScaling)
+        s += " no-scaling";
+    if (cli.maxDistance)
+        s += " max-distance=" + num(*cli.maxDistance);
+    if (cli.noChaseLimit)
+        s += " no-chase-limit";
+    if (cli.stopAtr)
+        s += " stop-atr=" + num(*cli.stopAtr);
+    if (cli.atrPeriod)
+        s += " atr-period=" + std::to_string(*cli.atrPeriod);
+    if (cli.risk)
+        s += " risk=" + num(*cli.risk);
+    if (cli.noTrail)
+        s += " no-trail";
+    if (cli.crossExit)
+        s += " cross-exit";
+    if (cli.c1Exit)
+        s += " c1-exit";
     if (cli.maxOpenRisk)
         s += " max-open-risk=" + num(*cli.maxOpenRisk);
     if (cli.maxPerCurrency)

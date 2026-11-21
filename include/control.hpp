@@ -13,7 +13,7 @@
 //   baseline arm   enters in the direction the baseline gives
 //   random arm     enters in a coin-flip direction; run once per seed
 // The baseline's result is then ranked among the random runs. Neither arm uses the cross-back exit (a random
-// trade may start against the line), so the options must have exitOnCross == false.
+// trade may start against the line, so with exitOnCross the random arm closes at the next cross whichever way it went).
 
 // How one run did. Closed trades only; NaN where there is nothing to average.
 struct ArmResult
@@ -45,7 +45,7 @@ using NnfxFactoryMaker = std::function<StrategyFactory(const NnfxOptions&)>;
 
 // Runs the baseline arm once and the random arm for seeds 1..seeds, over `data`, with `grid` giving the cash,
 // costs and thread count. The numbers do not depend on the thread count.
-// Throws std::invalid_argument if seeds < 1, options.exitOnCross is true, or options.randomSeed is set.
+// Throws std::invalid_argument if seeds < 1 or options.randomSeed is set.
 ControlResult runDirectionControl(const AlignedData& data, const Params& params, const NnfxFactoryMaker& make,
                                   const NnfxOptions& options, int seeds, const RunOptions& grid = RunOptions{});
 

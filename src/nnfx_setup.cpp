@@ -25,6 +25,28 @@ NnfxOptions makeNnfxOptions(const CliOptions& cli)
     o.confirmationWindow = cli.confirmWindow;
     o.oneCandleRule = cli.oneCandle;
     o.continuation = cli.continuation;
+    if (cli.trailAfter)
+        o.trailAfterAtr = cli.trailAfter;
+    if (cli.noScaling || cli.trailAfter)
+    {
+        o.entry.scaleOut = false;
+        o.breakeven = false;
+    }
+    if (cli.noChaseLimit)
+        o.maxDistanceAtr = std::nullopt;
+    else if (cli.maxDistance)
+        o.maxDistanceAtr = *cli.maxDistance;
+    if (cli.stopAtr)
+        o.entry.stopAtr = *cli.stopAtr;
+    if (cli.atrPeriod)
+        o.atrPeriod = *cli.atrPeriod;
+    if (cli.risk)
+        o.entry.riskPerHalf = *cli.risk / 2.0;          // the risk of the whole signal, split in two halves (one trade with no scaling)
+    if (cli.noTrail)
+    {
+        o.trailAtr = std::nullopt;
+        o.breakeven = false;
+    }
     o.maxOpenRisk = cli.maxOpenRisk;
     o.maxPerCurrency = cli.maxPerCurrency;
 

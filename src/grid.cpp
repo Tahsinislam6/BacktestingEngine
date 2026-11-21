@@ -1,6 +1,8 @@
 #include "grid.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdlib>
 #include <cstdio>
 #include <fstream>
 #include <limits>
@@ -30,18 +32,23 @@ namespace
         GridRow row;
         NnfxOptions nnfx;
         std::vector<double> luck;
-        std::size_t baseline{}, c1{};
+        std::size_t baseline{};
     };
 
-    Pair runPair(const GridBaseline& b, const GridC1& c, const AlignedData& inSample, const AlignedData& outOfSample,
-                 const GridOptions& options)
+    Pair runPair(const GridBaseline& b, const GridC1& c, const GridFilter* filter, const AlignedData& inSample,
+                 const AlignedData& outOfSample, const GridOptions& options)
     {
         Pair p;
         p.row.baseline = b.info.name;
         p.row.params = paramsText(b.params);
         p.row.c1 = c.name;
+        p.row.filter = filter ? filter->name : "";
         p.nnfx = options.nnfx;
         p.nnfx.components.confirmation = c.prototype;
+        if (options.c1Exit)
+            p.nnfx.components.exitIndicator = c.prototype;
+        if (filter)
+            p.nnfx.components.filter = filter->prototype;
         try
         {
             const StrategyFactory factory = b.info.nnfx(p.nnfx);
@@ -88,8 +95,8 @@ namespace
 
     std::string tableLine(const GridRow& r)
     {
-        return fmt("  %-26s %-16s %-24s %8s %7d %9s %7s %6s %9s | %9s %7s %6s | %s\n", r.baseline.c_str(), r.c1.c_str(),
-                   r.params.c_str(), num(r.inSampleExpectancyR, "%.3f").c_str(), r.oosTrades,
+        return fmt("  %-26s %-16s %-16s %-24s %8s %7d %9s %7s %6s %9s | %9s %7s %6s | %s\n", r.baseline.c_str(), r.c1.c_str(),
+                   r.filter.empty() ? "-" : r.filter.c_str(), r.params.c_str(), num(r.inSampleExpectancyR, "%.3f").c_str(), r.oosTrades,
                    num(r.oosExpectancyR, "%.3f").c_str(), pct(r.oosBeatsExpectancy).c_str(), num(r.oosScore).c_str(),
                    pct(r.oosAdjustedBeats).c_str(),
                    std::isnan(r.holdoutExpectancyR) ? "-" : num(r.holdoutExpectancyR, "%.3f").c_str(),
@@ -151,7 +158,7 @@ double familyAdjustedBeats(double score, const std::vector<double>& luck, int fa
 
 std::vector<GridRow> runGrid(const std::vector<GridBaseline>& baselines, const std::vector<GridC1>& c1s,
                              const AlignedData& inSample, const AlignedData& outOfSample, const GridOptions& options,
-                             const AlignedData* holdout)
+                             const AlignedData* holdout, const std::vector<GridFilter>& filters)
 {
     if (baselines.empty() || c1s.empty())
         throw std::invalid_argument("the grid needs at least one baseline and one C1");
@@ -159,20 +166,29 @@ std::vector<GridRow> runGrid(const std::vector<GridBaseline>& baselines, const s
         throw std::invalid_argument("the grid needs at least one random-direction run");
     if (options.priorTries < 0)
         throw std::invalid_argument("the number of earlier tries cannot be negative");
-    if (options.nnfx.exitOnCross)
-        throw std::invalid_argument("the grid cannot use the cross-back exit (the control needs it off)");
     if (options.nnfx.components.confirmation)
         throw std::invalid_argument("the grid puts its own C1 in: leave the confirmation unset");
+    if (options.c1Exit && options.nnfx.components.exitIndicator)
+        throw std::invalid_argument("c1Exit makes each pair's C1 the exit indicator: leave the exit indicator unset");
+    if (!filters.empty() && options.nnfx.components.filter)
+        throw std::invalid_argument("the grid puts its own filters in: leave the filter unset");
+
+    // no filters means one implicit "no filter" (a null pointer)
+    std::vector<const GridFilter*> filterChoices;
+    for (const GridFilter& f : filters)
+        filterChoices.push_back(&f);
+    if (filterChoices.empty())
+        filterChoices.push_back(nullptr);
 
     std::vector<Pair> pairs;
     for (std::size_t b = 0; b < baselines.size(); ++b)
         for (std::size_t c = 0; c < c1s.size(); ++c)
-        {
-            Pair p = runPair(baselines[b], c1s[c], inSample, outOfSample, options);
-            p.baseline = b;
-            p.c1 = c;
-            pairs.push_back(std::move(p));
-        }
+            for (const GridFilter* f : filterChoices)
+            {
+                Pair p = runPair(baselines[b], c1s[c], f, inSample, outOfSample, options);
+                p.baseline = b;
+                pairs.push_back(std::move(p));
+            }
 
     // the correction: every random run of every pair is one draw of luck; the best of familySize pairs is judged against it
     std::vector<double> luck;
@@ -239,15 +255,16 @@ std::string gridTable(const std::vector<GridRow>& rows, const GridOptions& optio
             family = r.familySize;
     }
 
-    std::string out = fmt("GRID: %zu pairs tried (+ %d earlier), NNFX trading without the cross-back exit, %d random-direction runs each\n",
-                          rows.size(), options.priorTries, options.controlRuns);
+    std::string out = fmt("GRID: %zu pairs tried (+ %d earlier), NNFX trading %s the cross-back exit%s, %d random-direction runs each\n",
+                          rows.size(), options.priorTries, options.nnfx.exitOnCross ? "with" : "without",
+                          options.c1Exit ? " (the C1 also exits)" : "", options.controlRuns);
     out += fmt("finalist  = out-of-sample expectancy >= %sR, beats >= %s of its own random runs, still beats >= %s after allowing for\n"
                "            the %d pairs tried (adj.beats), and in-sample expectancy > 0\n"
                "candidate = a finalist that also passes the same expectancy and beats bars once on the holdout (the beats bar is\n"
                "            raised to minBeats^(1/F) when there are more than 2 finalists)\n\n",
                num(options.minExpectancy).c_str(), pct(options.minBeats).c_str(), pct(options.minBeats).c_str(), family);
 
-    out += fmt("  %-26s %-16s %-24s %8s %7s %9s %7s %6s %9s | %9s %7s %6s | %s\n", "baseline", "C1", "parameters", "IS exp R",
+    out += fmt("  %-26s %-16s %-16s %-24s %8s %7s %9s %7s %6s %9s | %9s %7s %6s | %s\n", "baseline", "C1", "filter", "parameters", "IS exp R",
                "trades", "OOS exp R", "beats", "z", "adj.beats", "hold exp", "beats", "bar", "verdict");
     std::size_t listed = 0;
     for (const GridRow& r : rows)
@@ -262,7 +279,8 @@ std::string gridTable(const std::vector<GridRow>& rows, const GridOptions& optio
     }
     for (const GridRow& r : rows)
         if (!r.error.empty())
-            out += fmt("  %-26s %-16s ERROR: %s\n", r.baseline.c_str(), r.c1.c_str(), r.error.c_str());
+            out += fmt("  %-26s %-16s %-16s ERROR: %s\n", r.baseline.c_str(), r.c1.c_str(), r.filter.empty() ? "-" : r.filter.c_str(),
+                       r.error.c_str());
 
     out += fmt("\n%d finalist%s, %d candidate%s%s\n", finalists, finalists == 1 ? "" : "s", candidates, candidates == 1 ? "" : "s",
                holdoutRun || finalists == 0 ? "" : " (no holdout was given, so a finalist is not yet confirmed)");
@@ -275,14 +293,14 @@ std::string gridTable(const std::vector<GridRow>& rows, const GridOptions& optio
 
 std::string gridCsvHeader()
 {
-    return "baseline,params,c1,in_sample_trades,in_sample_expectancy_r,oos_trades,oos_expectancy_r,oos_beats_expectancy,"
+    return "baseline,params,c1,filter,in_sample_trades,in_sample_expectancy_r,oos_trades,oos_expectancy_r,oos_beats_expectancy,"
            "oos_score,oos_adjusted_beats,family_size,passed_stage_one,holdout_trades,holdout_expectancy_r,"
            "holdout_beats_expectancy,holdout_bar,candidate,error\n";
 }
 
 std::string gridCsvRow(const GridRow& r)
 {
-    std::string out = csvField(r.baseline) + "," + csvField(r.params) + "," + csvField(r.c1);
+    std::string out = csvField(r.baseline) + "," + csvField(r.params) + "," + csvField(r.c1) + "," + csvField(r.filter);
     out += "," + std::to_string(r.inSampleTrades) + "," + num(r.inSampleExpectancyR, "%.6g");
     out += "," + std::to_string(r.oosTrades) + "," + num(r.oosExpectancyR, "%.6g");
     for (double v : {r.oosBeatsExpectancy, r.oosScore, r.oosAdjustedBeats})
@@ -313,6 +331,51 @@ namespace
         return s.substr(a, s.find_last_not_of(" \t\r") - a + 1);
     }
 
+    std::string withoutSpaces(const std::string& s)
+    {
+        std::string out;
+        for (char ch : s)
+            if (ch != ' ' && ch != '\t' && ch != '\r')
+                out += ch;
+        return out;
+    }
+
+    // "a=1,b=2.5" -> {a: 1, b: 2.5}; an empty string gives nothing. Sets `error` (and returns what it has) when a part has no
+    // name, no '=', no value, is not a plain number, or repeats a name. Whether the names exist is for the caller to check.
+    std::vector<std::pair<std::string, double>> namedNumbers(const std::string& text, std::string& error)
+    {
+        std::vector<std::pair<std::string, double>> out;
+        std::size_t start = 0;
+        while (error.empty() && start < text.size())
+        {
+            std::size_t comma = text.find(',', start);
+            if (comma == std::string::npos)
+                comma = text.size();
+            const std::string part = text.substr(start, comma - start);
+            start = comma + 1;
+            const std::size_t eq = part.find('=');
+            if (eq == std::string::npos || eq == 0 || eq + 1 >= part.size())
+            {
+                error = "'" + part + "' is not name=value";
+                break;
+            }
+            const std::string name = part.substr(0, eq);
+            const std::string value = part.substr(eq + 1);
+            char* end = nullptr;
+            const double v = std::strtod(value.c_str(), &end);
+            if (end != value.c_str() + value.size())
+            {
+                error = "'" + value + "' is not a number (in '" + part + "')";
+                break;
+            }
+            for (const auto& [n, unused] : out)
+                if (n == name)
+                    error = "parameter '" + name + "' is given twice";
+            out.emplace_back(name, v);
+        }
+        return out;
+    }
+
     [[noreturn]] void bad(int line, const std::string& why)
     {
         throw std::invalid_argument("grid plan, line " + std::to_string(line) + ": " + why);
@@ -336,27 +399,38 @@ GridPlan parseGridPlan(const std::string& text)
         const std::size_t space = content.find_first_of(" \t");
         const std::string keyword = content.substr(0, space);
         const std::string rest = space == std::string::npos ? "" : trimmed(content.substr(space));
-        if (keyword != "baseline" && keyword != "c1")
-            bad(line, "expected 'baseline <name> <parameters>' or 'c1 <name>', got '" + content + "'");
+        if (keyword != "baseline" && keyword != "c1" && keyword != "filter")
+            bad(line, "expected 'baseline <name> <parameters>', 'c1 <name>' or 'filter <name>', got '" + content + "'");
         if (rest.empty())
             bad(line, "'" + keyword + "' needs a name");
 
         const std::size_t end = rest.find_first_of(" \t");
         const std::string name = rest.substr(0, end);
         const std::string after = end == std::string::npos ? "" : trimmed(rest.substr(end));
-        if (keyword == "c1")
+        if (keyword == "c1" || keyword == "filter")
         {
+            std::vector<std::string>& list = keyword == "c1" ? plan.c1s : plan.filters;
+            if (keyword == "filter" && !after.empty())
+                bad(line, "'filter' takes just a name (got '" + after + "' after it)");
+            // a C1 may carry parameters (a sweep lists the same C1 several times with different ones); kept as "name a=1,b=2"
+            std::string entry = name;
             if (!after.empty())
-                bad(line, "'c1' takes just a name (got '" + after + "' after it)");
-            if (std::find(plan.c1s.begin(), plan.c1s.end(), name) != plan.c1s.end())
-                bad(line, "c1 '" + name + "' is listed twice");
-            plan.c1s.push_back(name);
+            {
+                std::string error;
+                namedNumbers(withoutSpaces(after), error);
+                if (!error.empty())
+                    bad(line, "c1 '" + name + "': " + error);
+                entry += " " + withoutSpaces(after);
+            }
+            if (std::find(list.begin(), list.end(), entry) != list.end())
+                bad(line, keyword + " '" + entry + "' is listed twice");
+            list.push_back(entry);
         }
         else
         {
             for (const auto& b : plan.baselines)
-                if (b.first == name)
-                    bad(line, "baseline '" + name + "' is listed twice");
+                if (b.first == name && withoutSpaces(b.second) == withoutSpaces(after))
+                    bad(line, "baseline '" + name + "' with the same parameters is listed twice");
             plan.baselines.emplace_back(name, after);
         }
     }
@@ -394,14 +468,55 @@ ResolvedGrid resolveGridPlan(const GridPlan& plan)
             throw std::invalid_argument("baseline " + name + ": " + e.what());
         }
     }
-    for (const std::string& name : plan.c1s)
+    for (const std::string& entry : plan.c1s)
     {
+        const std::size_t space = entry.find(' ');
+        const std::string name = entry.substr(0, space);
+        const std::string paramText = space == std::string::npos ? "" : entry.substr(space + 1);
+        if (name == "none")
+        {
+            // no confirmation at all: the baseline's cross alone decides the entry
+            if (!paramText.empty())
+                throw std::invalid_argument("'c1 none' takes no parameters");
+            out.c1s.push_back({"none", nullptr});
+            continue;
+        }
         const ComponentInfo* c = findComponent(name);
         if (!c)
             throw std::invalid_argument("unknown C1 '" + name + "' (available: " + componentNames() + ")");
         if (c->kind != ComponentInfo::Kind::State)
             throw std::invalid_argument("'" + name + "' is a gate component: a C1 must be a state component");
-        out.c1s.push_back({name, c->makeState(c->defaults)});
+
+        // the parameters the plan names replace the component's defaults; the rest stay at their defaults
+        Params params = c->defaults;
+        std::string error;
+        for (const auto& [pname, value] : namedNumbers(paramText, error))
+        {
+            if (!params.has(pname))
+                throw std::invalid_argument("C1 " + name + " has no parameter '" + pname + "'");
+            if (!std::isfinite(value))
+                throw std::invalid_argument("C1 " + name + ": parameter '" + pname + "' must be a finite number");
+            params.set(pname, value);
+        }
+        if (!error.empty())
+            throw std::invalid_argument("C1 " + name + ": " + error);
+        try
+        {
+            out.c1s.push_back({paramText.empty() ? name : name + "(" + paramText + ")", c->makeState(params)});
+        }
+        catch (const std::invalid_argument& e)
+        {
+            throw std::invalid_argument("C1 " + name + "(" + paramText + "): " + e.what());
+        }
+    }
+    for (const std::string& name : plan.filters)
+    {
+        const ComponentInfo* c = findComponent(name);
+        if (!c)
+            throw std::invalid_argument("unknown filter '" + name + "' (available: " + componentNames() + ")");
+        if (c->kind != ComponentInfo::Kind::Gate)
+            throw std::invalid_argument("'" + name + "' is a state component: a filter must be a gate component");
+        out.filters.push_back({name, c->makeGate(c->defaults)});
     }
     return out;
 }

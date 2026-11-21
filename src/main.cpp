@@ -99,14 +99,18 @@ int main(int argc, char** argv)
             GridOptions grid;
             grid.run = run;
             grid.nnfx = nnfx;
-            grid.nnfx.exitOnCross = false;               // the random-direction control needs it off
+            grid.c1Exit = cli.c1Exit;
+            grid.nnfx.exitOnCross = cli.crossExit;       // off unless --cross-exit (the earlier grids all ran without it)
             grid.controlRuns = cli.control > 0 ? cli.control : 200;
             grid.minBeats = cli.minBeats;
             grid.minExpectancy = cli.minExpectancy;
             grid.priorTries = cli.priorTries;
 
-            std::cout << "Plan " << cli.gridFile << ": " << resolved.baselines.size() << " baselines x " << resolved.c1s.size()
-                      << " C1s = " << resolved.baselines.size() * resolved.c1s.size() << " pairs\n";
+            const std::size_t combinations = resolved.baselines.size() * resolved.c1s.size() * std::max<std::size_t>(resolved.filters.size(), 1);
+            std::cout << "Plan " << cli.gridFile << ": " << resolved.baselines.size() << " baselines x " << resolved.c1s.size() << " C1s";
+            if (!resolved.filters.empty())
+                std::cout << " x " << resolved.filters.size() << " filters";
+            std::cout << " = " << combinations << " pairs\n";
             std::cout << "In-sample: " << inSample.symbols.size() << " assets, " << inSample.snapshots.size()
                       << " days; out-of-sample: " << outOfSample.symbols.size() << " assets, " << outOfSample.snapshots.size()
                       << " days\n";
@@ -116,7 +120,7 @@ int main(int argc, char** argv)
             std::cout << "\n";
 
             const std::vector<GridRow> rows = runGrid(resolved.baselines, resolved.c1s, inSample, outOfSample, grid,
-                                                      cli.holdoutDir.empty() ? nullptr : &holdout);
+                                                      cli.holdoutDir.empty() ? nullptr : &holdout, resolved.filters);
             std::cout << gridTable(rows, grid);
 
             appendLog(cli.logDir, kGridLogFile, gridLogHeader(), gridLogRows(logContext, rows, grid.controlRuns));
@@ -133,7 +137,9 @@ int main(int argc, char** argv)
                 appendLedger(cli.ledgerFile,
                              ledgerRow(logContext,
                                        "grid " + cli.gridFile + ": " + std::to_string(resolved.baselines.size()) + " baselines x " +
-                                           std::to_string(resolved.c1s.size()) + " C1 = " + std::to_string(rows.size()) + " pairs" +
+                                           std::to_string(resolved.c1s.size()) + " C1" +
+                                           (resolved.filters.empty() ? "" : " x " + std::to_string(resolved.filters.size()) + " filters") +
+                                           " = " + std::to_string(rows.size()) + " pairs" +
                                            (cli.priorTries > 0 ? " (+ " + std::to_string(cli.priorTries) + " earlier)" : ""),
                                        std::to_string(finalists) + " finalists, " + std::to_string(candidates) +
                                            " candidates; rows in " + cli.logDir + "/" + kGridLogFile));
@@ -175,7 +181,7 @@ int main(int argc, char** argv)
         std::cout << "System: baseline " << label << (cli.noCrossExit ? ", no cross-back exit" : "") << "\n";
         std::cout << "Components: confirmation " << (cli.confirm.empty() ? "-" : cli.confirm) << ", exit indicator "
                   << (cli.exitIndicator.empty() ? "-" : cli.exitIndicator) << ", filter "
-                  << (cli.filter.empty() ? "-" : cli.filter) << (cli.continuation ? ", continuation" : "")
+                  << (cli.filter.empty() ? "-" : cli.filter) << (cli.continuation ? ", continuation" : "") << (cli.noScaling ? ", no scaling out" : "")
                   << (cli.oneCandle ? ", one-candle rule" : "") << "\n";
         std::cout << "In-sample: " << inSample.symbols.size() << " assets, " << inSample.snapshots.size() << " days\n";
 

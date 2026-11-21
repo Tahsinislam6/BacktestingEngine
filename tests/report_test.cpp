@@ -287,7 +287,7 @@ TEST(RunSystemTest, GivesTheSameNumbersAsEvaluate)
 
 TEST(RunSystemTest, HasOneReportPerAssetInTheDataOrder)
 {
-    const AlignedData d = dataOf({trendingSeries(20), trendingSeries(16), trendingSeries(12)});
+    const AlignedData d = dataOf({trendingSeries(20), trendingSeries(20), trendingSeries(20)});    // dataOf needs equal lengths
     const SystemRun run = runSystem(d, Params{{"level", 100}}, nnfxFixedLine, oneThread());
 
     ASSERT_EQ(run.assets.size(), 3u);

@@ -1,0 +1,188 @@
+# Phase one, plan E (PARAMETER SWEEP): every baseline VARIANT x every C1 VARIANT, in one batch
+#   ./build/backtester --grid phase1/plan_sweep.txt ... (see the note below)
+# STATUS: written 2026-11-18 at the user's request ("run baseline and c1 with a wide range of parameters"); FROZEN once run.
+#
+# What it is: the 28 baselines and 13 C1s of plan B, but each baseline appears with up to 5 values of its FIRST parameter and each C1
+# with 3 values of its first parameter. The other parameters stay at plan B's values.
+#   baseline first parameter: plan value x 0.5, 0.75, 1, 1.5, 2, each moved to the nearest point of the baseline's own legal grid
+#     (the range's from + k x step) and clamped into the range; duplicates dropped; the plan value itself is always kept exactly.
+#   C1 first parameter: x 0.5, 1, 2 of the default (rounded half up); laguerre gamma 0.4 / 0.7 / 0.9 (gamma must stay below 1);
+#     pmo "one" 18 / 35 / 70 with "two" at 20; hlc_trend close_period 3 / 5 / 10; tii length 15 / 30 / 60 with ma_length 60.
+#   Nothing is chosen by performance: the values come from this rule, written before the run.
+# Pairs: 130 baseline lines x 39 C1 lines = 5070. Counting: the pairs with default parameters (364) are inside it;
+#   --prior-tries 2912 (everything tried before today's run: 2,184 + 364 + 364) so M = 5070 + 2912 = 7982, which is strict.
+# Pass rule (also pasted in --note): FINALIST = out-of-sample expectancy >= 0.03R AND beats >= 90% of its own 200 random-direction
+#   runs AND adjusted beats F(z)^M >= 90% AND in-sample expectancy > 0. CANDIDATE = a finalist run once on 2006-2015 (pre2016-all,
+#   already used) with expectancy >= 0.03R and beats >= 90% (bar 0.9^(1/F) if more than 2 finalists). Default exit rules (two halves).
+#   No rule changes after seeing results.
+
+baseline alma period=5
+baseline alma period=7
+baseline alma period=9
+baseline alma period=14
+baseline alma period=18
+baseline atr_based_ema_variant_1 fastest=8,multiplier=300
+baseline atr_based_ema_variant_1 fastest=10,multiplier=300
+baseline atr_based_ema_variant_1 fastest=14,multiplier=300
+baseline atr_based_ema_variant_1 fastest=22,multiplier=300
+baseline atr_based_ema_variant_1 fastest=28,multiplier=300
+baseline coral period=17
+baseline coral period=26
+baseline coral period=34
+baseline coral period=51
+baseline coral period=68
+baseline ehlers_3pole_butterworth period=8
+baseline ehlers_3pole_butterworth period=11
+baseline ehlers_3pole_butterworth period=15
+baseline ehlers_3pole_butterworth period=23
+baseline ehlers_3pole_butterworth period=30
+baseline ehlers_two_pole_super_smoother period=8
+baseline ehlers_two_pole_super_smoother period=11
+baseline ehlers_two_pole_super_smoother period=15
+baseline ehlers_two_pole_super_smoother period=23
+baseline ehlers_two_pole_super_smoother period=30
+baseline ema period=10
+baseline ema period=15
+baseline ema period=20
+baseline ema period=30
+baseline ema period=40
+baseline frama period=8
+baseline frama period=12
+baseline frama period=16
+baseline frama period=24
+baseline frama period=32
+baseline gchannel period=50
+baseline gchannel period=75
+baseline gchannel period=100
+baseline gchannel period=150
+baseline gd length=10,vf=0.7
+baseline gd length=15,vf=0.7
+baseline gd length=20,vf=0.7
+baseline gd length=30,vf=0.7
+baseline gd length=40,vf=0.7
+baseline geomin_ma period=5
+baseline geomin_ma period=8
+baseline geomin_ma period=10
+baseline geomin_ma period=15
+baseline geomin_ma period=20
+baseline half_trend amplitude=2
+baseline half_trend amplitude=3
+baseline half_trend amplitude=4
+baseline hma period=11
+baseline hma period=16
+baseline hma period=21
+baseline hma period=32
+baseline hma period=42
+baseline kalman_filter k=0.5,sharpness=1
+baseline kalman_filter k=0.75,sharpness=1
+baseline kalman_filter k=1,sharpness=1
+baseline kalman_filter k=1.5,sharpness=1
+baseline kalman_filter k=2,sharpness=1
+baseline kama period=5,slow=30
+baseline kama period=10,slow=30
+baseline kama period=15,slow=30
+baseline kama period=20,slow=30
+baseline kijun period=13
+baseline kijun period=20
+baseline kijun period=26
+baseline kijun period=39
+baseline kijun period=52
+baseline mcginley period=5,constant=5
+baseline mcginley period=10,constant=5
+baseline mcginley period=12,constant=5
+baseline mcginley period=20,constant=5
+baseline mcginley period=25,constant=5
+baseline ptl_fast length=3
+baseline ptl_fast length=5
+baseline ptl_fast length=6
+baseline range_filter_modified atr_period=5,multiplier=3
+baseline range_filter_modified atr_period=10,multiplier=3
+baseline range_filter_modified atr_period=14,multiplier=3
+baseline range_filter_modified atr_period=20,multiplier=3
+baseline range_filter_modified atr_period=30,multiplier=3
+baseline recursivema period=2,iterations=20
+baseline recursivema period=3,iterations=20
+baseline recursivema period=4,iterations=20
+baseline sinewma period=10
+baseline sinewma period=15
+baseline sinewma period=20
+baseline sinewma period=30
+baseline sinewma period=40
+baseline sma period=10
+baseline sma period=15
+baseline sma period=20
+baseline sma period=30
+baseline sma period=40
+baseline ssl period=5
+baseline ssl period=8
+baseline ssl period=10
+baseline ssl period=15
+baseline ssl period=20
+baseline super_smoother period=5
+baseline super_smoother period=8
+baseline super_smoother period=10
+baseline super_smoother period=15
+baseline super_smoother period=20
+baseline t3_ma length=5,b=0.88
+baseline t3_ma length=8,b=0.88
+baseline t3_ma length=10,b=0.88
+baseline t3_ma length=15,b=0.88
+baseline t3_ma length=20,b=0.88
+baseline third_gen_ma period=120,ratio=4
+baseline third_gen_ma period=160,ratio=4
+baseline third_gen_ma period=220,ratio=4
+baseline third_gen_ma period=300,ratio=4
+baseline trimagen period=10
+baseline trimagen period=15
+baseline trimagen period=20
+baseline trimagen period=30
+baseline trimagen period=40
+baseline turtle_channel trade=10,stop=10
+baseline turtle_channel trade=15,stop=10
+baseline turtle_channel trade=20,stop=10
+baseline turtle_channel trade=30,stop=10
+baseline turtle_channel trade=40,stop=10
+baseline vidya period=5,histper=30
+baseline vidya period=10,histper=30
+baseline vidya period=15,histper=30
+baseline vidya period=20,histper=30
+
+c1 adx_di period=7
+c1 adx_di
+c1 adx_di period=28
+c1 andean_oscillator length=25
+c1 andean_oscillator
+c1 andean_oscillator length=100
+c1 aroon period=7
+c1 aroon
+c1 aroon period=28
+c1 bears_bulls_impulse period=7
+c1 bears_bulls_impulse
+c1 bears_bulls_impulse period=26
+c1 cmo length=5
+c1 cmo
+c1 cmo length=18
+c1 disparity_index period=7
+c1 disparity_index
+c1 disparity_index period=26
+c1 hlc_trend close_period=3
+c1 hlc_trend
+c1 hlc_trend close_period=10
+c1 laguerre gamma=0.4
+c1 laguerre
+c1 laguerre gamma=0.9
+c1 lwpi length=4
+c1 lwpi
+c1 lwpi length=16
+c1 pmo one=18
+c1 pmo
+c1 pmo one=70
+c1 rsi period=7
+c1 rsi
+c1 rsi period=28
+c1 tii length=15
+c1 tii
+c1 tii length=60
+c1 ttf ttf_bars=4
+c1 ttf
+c1 ttf ttf_bars=16

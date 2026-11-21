@@ -9,6 +9,7 @@
 // The entry of one NNFX signal: two open orders on the same asset.
 //   [0] the half that takes profit at takeProfitAtr * ATR
 //   [1] the runner, with no take-profit
+// (With scaleOut == false there is only one order: no take-profit, quantity for 2 x riskPerHalf.)
 // Both share the stop loss, stopAtr * ATR from the close. Each half is sized so that hitting the stop
 // loses riskPerHalf of equity, so the pair risks twice that (1% + 1% = the usual 2% per signal).
 struct NnfxEntryRules
@@ -16,6 +17,7 @@ struct NnfxEntryRules
     double riskPerHalf{0.01};       // share of equity lost if the stop is hit, per half
     double stopAtr{1.5};
     double takeProfitAtr{1.0};
+    bool scaleOut{true};            // false = ONE order with both halves' risk (2 x riskPerHalf) and no take-profit
 };
 
 // Throws std::invalid_argument unless riskPerHalf is in (0, 0.5] and stopAtr and takeProfitAtr are positive.
@@ -50,6 +52,9 @@ inline std::vector<Order> nnfxEntryOrders(Direction direction, double close, dou
         throw std::invalid_argument("the stop loss would be at or below zero");
 
     const double quantity = equity * rules.riskPerHalf / stopDistance;
+
+    if (!rules.scaleOut)
+        return {openOrder(direction, 2.0 * quantity, stop, std::nullopt, asset)};
 
     return {openOrder(direction, quantity, stop, target, asset),
             openOrder(direction, quantity, stop, std::nullopt, asset)};

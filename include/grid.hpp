@@ -37,10 +37,17 @@ struct GridC1
     std::shared_ptr<const AnyState> prototype;      // a State component used as the first confirmation
 };
 
+struct GridFilter
+{
+    std::string name;
+    std::shared_ptr<const AnyGate> prototype;       // a Gate component used as the filter
+};
+
 struct GridOptions
 {
     RunOptions run;                         // cash, costs, threads
-    NnfxOptions nnfx;                       // the other nnfx switches; exitOnCross must be false and the confirmation unset
+    NnfxOptions nnfx;                       // the other nnfx switches; the confirmation and filter must be unset
+    bool c1Exit{false};                     // each pair's C1 also closes its trades when its state turns against them (nnfx must have no exit indicator)
     int controlRuns{200};                   // random-direction runs per pair
     double minBeats{0.9};
     double minExpectancy{0.03};
@@ -50,6 +57,7 @@ struct GridOptions
 struct GridRow
 {
     std::string baseline, params, c1;
+    std::string filter;                     // empty when the pair has no filter
     std::string error;                      // not empty: this pair could not be run (the numbers are NaN)
 
     int inSampleTrades{0};
@@ -82,14 +90,14 @@ std::vector<double> nullScores(const std::vector<double>& samples);
 // NaN if the score is NaN or `luck` is empty. Throws std::invalid_argument if familySize < 1.
 double familyAdjustedBeats(double score, const std::vector<double>& luck, int familySize);
 
-// Runs every baseline x C1 pair (one after another; each control uses the threads of options.run). A pair that fails (an
+// Runs every baseline x C1 x filter combination (with no filters, every baseline x C1 pair; one after another; each control uses the threads of options.run). A pair that fails (an
 // exception) gets a row with `error` set, counts as a try, and the others carry on. Rows come back best first (see
 // the order in gridTable). `holdout` may be null (then there are finalists but no candidates).
 // Throws std::invalid_argument if there is no baseline or no C1, controlRuns < 1, priorTries < 0, or
-// nnfx.exitOnCross is true or nnfx already has a confirmation.
+// nnfx already has a confirmation or (when filters are given) a filter.
 std::vector<GridRow> runGrid(const std::vector<GridBaseline>& baselines, const std::vector<GridC1>& c1s,
                              const AlignedData& inSample, const AlignedData& outOfSample, const GridOptions& options,
-                             const AlignedData* holdout = nullptr);
+                             const AlignedData* holdout = nullptr, const std::vector<GridFilter>& filters = {});
 
 // The summary (pairs tried, finalists, candidates, the chance of luck at that number of tries) and the `top` best rows;
 // every finalist and every failed pair is listed whatever `top` is. The full table is in the grid log.
@@ -108,10 +116,12 @@ std::string gridCsv(const std::vector<GridRow>& rows);
 //   baseline kama period=15,slow=30
 //   c1 rsi
 //   c1 aroon
+//   filter ttms            (optional: gate components; every pair is then run with each of them)
 struct GridPlan
 {
     std::vector<std::pair<std::string, std::string>> baselines;     // name, the parameter text as written
-    std::vector<std::string> c1s;
+    std::vector<std::string> c1s;                                   // "name" or "name a=1,b=2" (spaces dropped); a name may repeat; "none" = no confirmation (the cross alone)
+    std::vector<std::string> filters;                               // may be empty: no filter
 };
 
 // Throws std::invalid_argument naming the line for anything wrong: an unknown keyword, a missing name, a name twice, junk
@@ -125,8 +135,10 @@ struct ResolvedGrid
 {
     std::vector<GridBaseline> baselines;
     std::vector<GridC1> c1s;
+    std::vector<GridFilter> filters;
 };
 
 // Looks the names up in the baseline and component registries and reads the parameters (parseParams: every parameter,
-// inside its range). A C1 must be a State component (default parameters). Throws std::invalid_argument naming the problem.
+// inside its range). A C1 must be a State component and a filter a Gate component (default parameters). Throws
+// std::invalid_argument naming the problem.
 ResolvedGrid resolveGridPlan(const GridPlan& plan);

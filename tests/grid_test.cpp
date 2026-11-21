@@ -394,9 +394,6 @@ TEST(GridTest, TheC1IsTheOnlyThingThatDiffersBetweenPairs)
 TEST(GridTest, RejectsOptionsAndInputsTheControlCannotUse)
 {
     const AlignedData in = dataOf(trending(40)), out = dataOf(trending(30));
-    GridOptions crossBack = options();
-    crossBack.nnfx.exitOnCross = true;
-    EXPECT_THROW(grid({fixedLine("a")}, {bullish("c")}, in, out, crossBack), std::invalid_argument);
     EXPECT_THROW(grid({fixedLine("a")}, {bullish("c")}, in, out, options(0)), std::invalid_argument);
     GridOptions negative = options();
     negative.priorTries = -1;
@@ -788,8 +785,14 @@ TEST(GridPlanTest, RejectsBadPlans)
     for (const char* bad : {"baseline\nc1 rsi\n",                                   // no name
                             "baseline kijun period=26\nc1\n",                       // no c1 name
                             "baseline kijun period=26\nc1 rsi extra\n",             // junk after the c1 name
-                            "baseline kijun period=26\nbaseline kijun period=27\nc1 rsi\n",   // twice
+                            "baseline kijun period=26\nbaseline kijun period=26\nc1 rsi\n",   // the same line twice
+                            "baseline kijun period=26\nbaseline kijun  period = 26\nc1 rsi\n",   // the same, spaced differently
                             "baseline kijun period=26\nc1 rsi\nc1 rsi\n",           // twice
+                            "baseline kijun period=26\nc1 rsi period=7\nc1 rsi period=7\n",   // the same C1 twice
+                            "baseline kijun period=26\nc1 rsi period\n",           // no value
+                            "baseline kijun period=26\nc1 rsi period=\n",          // no value
+                            "baseline kijun period=26\nc1 rsi period=x\n",         // not a number
+                            "baseline kijun period=26\nc1 rsi period=7,period=8\n",   // the same parameter twice
                             "baseline kijun period=26\n",                           // no c1
                             "c1 rsi\n",                                             // no baseline
                             "",                                                     // nothing
@@ -864,4 +867,483 @@ TEST(GridPlanTest, PlanCHasTheSameBaselinesAsTheFrozenPlanAndOnlyLwpi)
     EXPECT_EQ(planC.c1s[0], "lwpi");
     const ResolvedGrid resolved = resolveGridPlan(planC);
     EXPECT_EQ(resolved.baselines.size() * resolved.c1s.size(), 28u);
+}
+
+// ---------- the filter dimension ----------
+// A grid pair can also carry a FILTER (a gate component): baseline x C1 x filter. A plan with no filters is a plan with one
+// implicit "no filter", exactly as before. The filter gates the entries of the pair AND of its random-direction runs.
+
+namespace
+{
+class OpenGate : public AnyGate
+{
+public:
+    void update(const Bar&) override {}
+    bool ready() const override { return true; }
+    bool allows() const override { return true; }
+    std::size_t warmupBars() const override { return 1; }
+    std::unique_ptr<AnyGate> clone() const override { return std::make_unique<OpenGate>(); }
+};
+
+class ShutGate : public AnyGate
+{
+public:
+    void update(const Bar&) override {}
+    bool ready() const override { return true; }
+    bool allows() const override { return false; }
+    std::size_t warmupBars() const override { return 1; }
+    std::unique_ptr<AnyGate> clone() const override { return std::make_unique<ShutGate>(); }
+};
+
+// allows only on every third bar it has seen
+class EveryThirdGate : public AnyGate
+{
+public:
+    void update(const Bar&) override { ++seen_; }
+    bool ready() const override { return true; }
+    bool allows() const override { return seen_ % 3 == 0; }
+    std::size_t warmupBars() const override { return 1; }
+    std::unique_ptr<AnyGate> clone() const override { return std::make_unique<EveryThirdGate>(*this); }
+private:
+    int seen_{0};
+};
+
+GridFilter openGate(const std::string& name = "open") { return {name, std::make_shared<OpenGate>()}; }
+GridFilter shutGate(const std::string& name = "shut") { return {name, std::make_shared<ShutGate>()}; }
+GridFilter thirdGate(const std::string& name = "third") { return {name, std::make_shared<EveryThirdGate>()}; }
+
+std::vector<GridRow> gridWithFilters(const std::vector<GridBaseline>& b, const std::vector<GridC1>& c,
+                                     const std::vector<GridFilter>& f, const AlignedData& in, const AlignedData& out,
+                                     const GridOptions& o = options(), const AlignedData* holdout = nullptr)
+{
+    return runGrid(b, c, in, out, o, holdout, f);
+}
+
+const GridRow& rowWith(const std::vector<GridRow>& rows, const std::string& baseline, const std::string& c1, const std::string& filter)
+{
+    for (const GridRow& r : rows)
+        if (r.baseline == baseline && r.c1 == c1 && r.filter == filter)
+            return r;
+    throw std::runtime_error("no such row");
+}
+}
+
+TEST(GridFilterTest, EveryBaselineC1AndFilterIsAPair)
+{
+    const auto rows = gridWithFilters({fixedLine("alpha"), fixedLine("beta")}, {bullish("c1"), bullish("c2")},
+                                      {openGate("f1"), thirdGate("f2"), shutGate("f3")}, dataOf(trending(40)), dataOf(trending(30)));
+
+    ASSERT_EQ(rows.size(), 12u);
+    for (const char* b : {"alpha", "beta"})
+        for (const char* c : {"c1", "c2"})
+            for (const char* f : {"f1", "f2", "f3"})
+                EXPECT_NO_THROW(rowWith(rows, b, c, f)) << b << " " << c << " " << f;
+    for (const GridRow& r : rows)
+        EXPECT_EQ(r.familySize, 12);
+}
+
+TEST(GridFilterTest, WithoutFiltersTheFilterColumnIsEmptyAndNothingChanges)
+{
+    const auto plain = grid({fixedLine("alpha")}, {bullish("c1")}, dataOf(trending(40)), dataOf(trending(30)));
+    const auto none = gridWithFilters({fixedLine("alpha")}, {bullish("c1")}, {}, dataOf(trending(40)), dataOf(trending(30)));
+
+    ASSERT_EQ(plain.size(), 1u);
+    ASSERT_EQ(none.size(), 1u);
+    EXPECT_EQ(none[0].filter, "");
+    EXPECT_DOUBLE_EQ(plain[0].oosExpectancyR, none[0].oosExpectancyR);
+    EXPECT_EQ(plain[0].familySize, none[0].familySize);
+}
+
+TEST(GridFilterTest, AnAlwaysOpenFilterChangesNothing)
+{
+    const auto plain = grid({fixedLine("alpha")}, {bullish("c1")}, dataOf(trending(40)), dataOf(trending(30)));
+    const auto open = gridWithFilters({fixedLine("alpha")}, {bullish("c1")}, {openGate()}, dataOf(trending(40)), dataOf(trending(30)));
+
+    EXPECT_EQ(open[0].filter, "open");
+    EXPECT_DOUBLE_EQ(plain[0].oosExpectancyR, open[0].oosExpectancyR);
+    EXPECT_EQ(plain[0].oosTrades, open[0].oosTrades);
+    EXPECT_DOUBLE_EQ(plain[0].oosScore, open[0].oosScore);
+    EXPECT_DOUBLE_EQ(plain[0].inSampleExpectancyR, open[0].inSampleExpectancyR);
+}
+
+TEST(GridFilterTest, AnAlwaysShutFilterMeansNoTradesAndNoFinalist)
+{
+    const auto rows = gridWithFilters({fixedLine("alpha")}, {bullish("c1")}, {shutGate()}, dataOf(trending(40)), dataOf(trending(30)));
+
+    EXPECT_EQ(rows[0].oosTrades, 0);
+    EXPECT_EQ(rows[0].inSampleTrades, 0);
+    EXPECT_FALSE(rows[0].passedStageOne);
+    EXPECT_FALSE(rows[0].candidate);
+}
+
+TEST(GridFilterTest, AFilterThatBlocksSomeEntriesChangesTheTradesAndTheRandomRunsToo)
+{
+    const auto plain = grid({fixedLine("alpha")}, {bullish("c1")}, dataOf(trending(40)), dataOf(trending(30)));
+    const auto third = gridWithFilters({fixedLine("alpha")}, {bullish("c1")}, {thirdGate()}, dataOf(trending(40)), dataOf(trending(30)));
+
+    EXPECT_LT(third[0].oosTrades, plain[0].oosTrades);
+    EXPECT_GT(third[0].oosTrades, 0);
+
+    // the random arms are filtered as well: the same system run directly with the filter gives the same rank
+    NnfxOptions o = options().nnfx;
+    o.components.confirmation = std::make_shared<Bullish>();
+    o.components.filter = std::make_shared<EveryThirdGate>();
+    const ControlResult direct = runDirectionControl(dataOf(trending(30)), Params{{"level", 100}}, fixedLine("alpha").info.nnfx, o,
+                                                     options().controlRuns);
+    EXPECT_DOUBLE_EQ(third[0].oosExpectancyR, direct.baseline.expectancyR);
+    EXPECT_DOUBLE_EQ(third[0].oosBeatsExpectancy, direct.expectancyRank);
+}
+
+TEST(GridFilterTest, PriorTriesAddToTheFamilyOfAllTheCombinations)
+{
+    GridOptions o = options();
+    o.priorTries = 5;
+    const auto rows = gridWithFilters({fixedLine("a")}, {bullish("c1")}, {openGate("f1"), openGate("f2")}, dataOf(trending(40)),
+                                      dataOf(trending(30)), o);
+    EXPECT_EQ(rows[0].familySize, 7);
+}
+
+TEST(GridFilterTest, TheHoldoutRunKeepsTheFilter)
+{
+    // a finalist with a filter is run on the holdout with that same filter
+    const AlignedData holdout = dataOf(trendThenReversing(30, 5));
+    GridOptions o = options();
+    o.minExpectancy = -1.0;
+    const auto rows = gridWithFilters({fixedLine("alpha")}, {bullish("c1")}, {thirdGate()}, dataOf(trending(40)), dataOf(trending(30)), o,
+                                      &holdout);
+    ASSERT_TRUE(rows[0].passedStageOne);
+
+    NnfxOptions n = o.nnfx;
+    n.components.confirmation = std::make_shared<Bullish>();
+    n.components.filter = std::make_shared<EveryThirdGate>();
+    const ControlResult direct = runDirectionControl(holdout, Params{{"level", 100}}, fixedLine("alpha").info.nnfx, n, o.controlRuns);
+    EXPECT_DOUBLE_EQ(rows[0].holdoutExpectancyR, direct.baseline.expectancyR);
+    EXPECT_EQ(rows[0].holdoutTrades, direct.baseline.trades);
+}
+
+TEST(GridFilterTest, TheOptionsMustNotAlreadyHaveAFilter)
+{
+    GridOptions withOne = options();
+    withOne.nnfx.components.filter = std::make_shared<OpenGate>();
+    EXPECT_THROW(gridWithFilters({fixedLine("a")}, {bullish("c")}, {openGate()}, dataOf(trending(40)), dataOf(trending(30)), withOne),
+                 std::invalid_argument);
+}
+
+TEST(GridFilterTest, WithoutGridFiltersAPresetFilterInTheOptionsAppliesToEveryPair)
+{
+    // allowed (and then no filter column): a filter given in the options gates every pair
+    GridOptions shut = options();
+    shut.nnfx.components.filter = std::make_shared<ShutGate>();
+    const auto rows = grid({fixedLine("a")}, {bullish("c")}, dataOf(trending(40)), dataOf(trending(30)), shut);
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].filter, "");
+    EXPECT_EQ(rows[0].oosTrades, 0);
+}
+
+TEST(GridFilterTest, TheTableAndTheCsvShowTheFilter)
+{
+    const auto rows = gridWithFilters({fixedLine("alpha")}, {bullish("c1")}, {thirdGate("volume_gate")}, dataOf(trending(40)),
+                                      dataOf(trending(30)));
+    EXPECT_NE(gridTable(rows, options()).find("volume_gate"), std::string::npos);
+    const std::string csv = gridCsv(rows);
+    EXPECT_NE(csv.find(",filter,"), std::string::npos);
+    EXPECT_NE(csv.find(",volume_gate,"), std::string::npos);
+    const auto commas = [](const std::string& line) { return std::count(line.begin(), line.end(), ','); };
+    const std::size_t newline = csv.find('\n');
+    EXPECT_EQ(commas(csv.substr(0, newline)), commas(csv.substr(newline + 1)));
+}
+
+TEST(GridPlanTest, ReadsFilterLines)
+{
+    const GridPlan plan = parseGridPlan("baseline kijun period=26\nc1 rsi\nfilter ttms\nfilter adx_strength   # trend strength\n");
+    ASSERT_EQ(plan.filters.size(), 2u);
+    EXPECT_EQ(plan.filters[0], "ttms");
+    EXPECT_EQ(plan.filters[1], "adx_strength");
+}
+
+TEST(GridPlanTest, APlanWithoutFiltersHasNone)
+{
+    EXPECT_TRUE(parseGridPlan("baseline kijun period=26\nc1 rsi\n").filters.empty());
+}
+
+TEST(GridPlanTest, BadFilterLinesAreRejected)
+{
+    for (const char* bad : {"baseline kijun period=26\nc1 rsi\nfilter\n",
+                            "baseline kijun period=26\nc1 rsi\nfilter ttms extra\n",
+                            "baseline kijun period=26\nc1 rsi\nfilter ttms\nfilter ttms\n"})
+        EXPECT_THROW(parseGridPlan(bad), std::invalid_argument) << bad;
+}
+
+TEST(GridPlanTest, ResolvesFiltersAsGateComponents)
+{
+    const ResolvedGrid g = resolveGridPlan(parseGridPlan("baseline kijun period=26\nc1 rsi\nfilter atr_expansion\nfilter ttms\n"));
+    ASSERT_EQ(g.filters.size(), 2u);
+    EXPECT_EQ(g.filters[0].name, "atr_expansion");
+    EXPECT_NE(g.filters[0].prototype, nullptr);
+}
+
+TEST(GridPlanTest, ResolvingRejectsUnknownFiltersAndStateComponents)
+{
+    EXPECT_THROW(resolveGridPlan(parseGridPlan("baseline kijun period=26\nc1 rsi\nfilter nope\n")), std::invalid_argument);
+    EXPECT_THROW(resolveGridPlan(parseGridPlan("baseline kijun period=26\nc1 rsi\nfilter aroon\n")), std::invalid_argument);   // a state component
+}
+
+TEST(GridPlanTest, PlanDHasPlanBsBaselinesAndC1sAndFiveGateFilters)
+{
+    const std::string dir = std::string(PROJECT_DIR) + "/phase1/";
+    if (!std::ifstream(dir + "plan_13c1.txt") || !std::ifstream(dir + "plan_filters.txt"))
+        GTEST_SKIP() << "plan files not found";
+    const GridPlan planB = loadGridPlan(dir + "plan_13c1.txt");
+    const GridPlan planD = loadGridPlan(dir + "plan_filters.txt");
+
+    EXPECT_EQ(planD.baselines, planB.baselines);
+    EXPECT_EQ(planD.c1s, planB.c1s);
+    ASSERT_EQ(planD.filters.size(), 5u);
+    const ResolvedGrid resolved = resolveGridPlan(planD);                 // every filter is a gate component
+    EXPECT_EQ(resolved.baselines.size() * resolved.c1s.size() * resolved.filters.size(), 1820u);
+}
+
+// ---------- the same baseline or C1 with different parameters (a parameter sweep) ----------
+
+TEST(GridPlanTest, ABaselineMayBeListedAgainWithOtherParameters)
+{
+    const GridPlan plan = parseGridPlan("baseline kijun period=13\nbaseline kijun period=26\nbaseline kijun period=52\nc1 rsi\n");
+
+    ASSERT_EQ(plan.baselines.size(), 3u);
+    EXPECT_EQ(plan.baselines[2].second, "period=52");
+    EXPECT_EQ(resolveGridPlan(plan).baselines.size(), 3u);
+}
+
+TEST(GridPlanTest, AC1MayCarryParametersAndBeListedAgainWithOthers)
+{
+    const GridPlan plan = parseGridPlan("baseline kijun period=26\nc1 rsi\nc1 rsi period=7\nc1 rsi period = 28\nc1 pmo one=17, two=10\n");
+
+    ASSERT_EQ(plan.c1s.size(), 4u);
+    EXPECT_EQ(plan.c1s[0], "rsi");
+    EXPECT_EQ(plan.c1s[1], "rsi period=7");
+    EXPECT_EQ(plan.c1s[2], "rsi period=28");           // spaces inside the parameters are dropped
+    EXPECT_EQ(plan.c1s[3], "pmo one=17,two=10");
+}
+
+TEST(GridPlanTest, AC1WithParametersIsNamedAfterThemAndKeepsTheDefaultsItDoesNotMention)
+{
+    const ResolvedGrid g = resolveGridPlan(parseGridPlan("baseline kijun period=26\nc1 rsi\nc1 rsi period=7\nc1 pmo one=17\n"));
+
+    ASSERT_EQ(g.c1s.size(), 3u);
+    EXPECT_EQ(g.c1s[0].name, "rsi");                   // a plain name stays a plain name (old logs read the same)
+    EXPECT_EQ(g.c1s[1].name, "rsi(period=7)");
+    EXPECT_EQ(g.c1s[2].name, "pmo(one=17)");
+    for (const GridC1& c : g.c1s)
+        EXPECT_NE(c.prototype, nullptr);
+}
+
+TEST(GridPlanTest, TheC1ParametersReallyChangeTheComponent)
+{
+    // rsi with period 3 is ready after 4 bars, the default (14) after 15
+    const ResolvedGrid g = resolveGridPlan(parseGridPlan("baseline kijun period=26\nc1 rsi\nc1 rsi period=3\n"));
+    auto readyAfter = [](const GridC1& c)
+    {
+        auto copy = c.prototype->clone();
+        Bar b;
+        b.open = b.high = b.low = b.close = 100.0;
+        for (int i = 1; i <= 40; ++i)
+        {
+            b.close = 100.0 + (i % 3);
+            b.high = b.close + 1;
+            b.low = b.close - 1;
+            copy->update(b);
+            if (copy->ready())
+                return i;
+        }
+        return -1;
+    };
+    EXPECT_EQ(readyAfter(g.c1s[0]), 15);
+    EXPECT_EQ(readyAfter(g.c1s[1]), 4);
+}
+
+TEST(GridPlanTest, ResolvingRejectsABadC1Parameter)
+{
+    EXPECT_THROW(resolveGridPlan(parseGridPlan("baseline kijun period=26\nc1 rsi speed=7\n")), std::invalid_argument);   // no such parameter
+    EXPECT_THROW(resolveGridPlan(parseGridPlan("baseline kijun period=26\nc1 rsi period=0\n")), std::invalid_argument);   // the indicator refuses it
+    EXPECT_THROW(resolveGridPlan(parseGridPlan("baseline kijun period=26\nc1 rsi period=nan\n")), std::invalid_argument);
+    EXPECT_THROW(resolveGridPlan(parseGridPlan("baseline kijun period=26\nc1 laguerre gamma=nan\n")), std::invalid_argument);
+    EXPECT_THROW(resolveGridPlan(parseGridPlan("baseline kijun period=26\nc1 laguerre gamma=inf\n")), std::invalid_argument);
+}
+
+TEST(GridPlanTest, ASweepPairsEveryBaselineVariantWithEveryC1Variant)
+{
+    const ResolvedGrid g = resolveGridPlan(parseGridPlan(
+        "baseline kijun period=13\nbaseline kijun period=26\nbaseline ema period=20\nc1 rsi\nc1 rsi period=7\n"));
+    EXPECT_EQ(g.baselines.size() * g.c1s.size(), 6u);
+}
+
+TEST(GridPlanTest, ThePhaseOneSweepPlanParsesResolvesAndContainsEveryPlanBPair)
+{
+    // phase1/plan_sweep.txt is the pre-registered parameter sweep: plan B's baselines and C1s, each with several values of its
+    // first parameter. It must resolve, and plan B's own (default) pairs must be inside it.
+    const std::string path = std::string(PROJECT_DIR) + "/phase1/plan_sweep.txt";
+    const std::string pathB = std::string(PROJECT_DIR) + "/phase1/plan_13c1.txt";
+    if (!std::ifstream(path) || !std::ifstream(pathB))
+        GTEST_SKIP() << "plan files not found";
+    const GridPlan sweep = loadGridPlan(path);
+    const GridPlan planB = loadGridPlan(pathB);
+    const ResolvedGrid resolved = resolveGridPlan(sweep);
+
+    EXPECT_EQ(resolved.baselines.size() * resolved.c1s.size(), 5070u);
+    EXPECT_TRUE(resolved.filters.empty());
+    for (const auto& b : planB.baselines)
+        EXPECT_NE(std::find(sweep.baselines.begin(), sweep.baselines.end(), b), sweep.baselines.end()) << b.first << " " << b.second;
+    for (const std::string& c : planB.c1s)
+        EXPECT_NE(std::find(sweep.c1s.begin(), sweep.c1s.end(), c), sweep.c1s.end()) << c;
+    // every baseline of plan B is swept, not just kept
+    for (const auto& b : planB.baselines)
+    {
+        int variants = 0;
+        for (const auto& s : sweep.baselines)
+            variants += s.first == b.first;
+        EXPECT_GE(variants, 3) << b.first;
+        EXPECT_LE(variants, 5) << b.first;
+    }
+    for (const std::string& c : planB.c1s)
+    {
+        int variants = 0;
+        for (const std::string& s : sweep.c1s)
+            variants += s.substr(0, s.find(' ')) == c;
+        EXPECT_EQ(variants, 3) << c;
+    }
+}
+
+TEST(GridPlanTest, ThePlanFHlcLeadIsPlanBsBaselinesPlusTheFiveLeadVariantsWithOneC1)
+{
+    const std::string path = std::string(PROJECT_DIR) + "/phase1/plan_hlc.txt";
+    const std::string pathB = std::string(PROJECT_DIR) + "/phase1/plan_13c1.txt";
+    if (!std::ifstream(path) || !std::ifstream(pathB))
+        GTEST_SKIP() << "plan files not found";
+    const GridPlan plan = loadGridPlan(path);
+    const GridPlan planB = loadGridPlan(pathB);
+    const ResolvedGrid resolved = resolveGridPlan(plan);
+
+    EXPECT_EQ(resolved.baselines.size() * resolved.c1s.size(), 33u);
+    ASSERT_EQ(plan.c1s.size(), 1u);
+    EXPECT_EQ(plan.c1s[0], "hlc_trend close_period=10");
+    ASSERT_GE(plan.baselines.size(), planB.baselines.size());
+    for (std::size_t i = 0; i < planB.baselines.size(); ++i)
+        EXPECT_EQ(plan.baselines[i], planB.baselines[i]) << i;           // the 28 lines are plan B's, unchanged
+    EXPECT_EQ(plan.baselines.size(), planB.baselines.size() + 5);
+}
+
+TEST(GridTest, CanRunWithTheCrossBackExit)
+{
+    GridOptions crossBack = options();
+    crossBack.nnfx.exitOnCross = true;
+    const auto rows = grid({fixedLine("a")}, {bullish("c")}, dataOf(trending(40)), dataOf(trending(30)), crossBack);
+
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_TRUE(rows[0].error.empty()) << rows[0].error;
+    EXPECT_GT(rows[0].oosTrades, 0);
+}
+
+// a C1 that alternates: bullish for `period` bars, bearish for `period` bars, and so on
+class Alternating : public AnyState
+{
+public:
+    explicit Alternating(int period) : period_(period) {}
+    void update(const Bar&) override { ++seen_; }
+    bool ready() const override { return true; }
+    int state() const override { return ((seen_ - 1) / period_) % 2 == 0 ? 1 : -1; }
+    std::size_t warmupBars() const override { return 1; }
+    std::unique_ptr<AnyState> clone() const override { return std::make_unique<Alternating>(period_); }
+private:
+    int period_;
+    int seen_{0};
+};
+
+// "c1 none" in a plan = no confirmation at all: the baseline's cross alone decides the entry (an explicit, visible choice)
+TEST(GridTest, APlanCanListNoC1)
+{
+    const ResolvedGrid g = resolveGridPlan(parseGridPlan("baseline kijun period=26\nc1 none\nc1 rsi\n"));
+    ASSERT_EQ(g.c1s.size(), 2u);
+    EXPECT_EQ(g.c1s[0].name, "none");
+    EXPECT_EQ(g.c1s[0].prototype, nullptr);
+    EXPECT_EQ(g.c1s[1].name, "rsi");
+    EXPECT_NE(g.c1s[1].prototype, nullptr);
+    EXPECT_THROW(resolveGridPlan(parseGridPlan("baseline kijun period=26\nc1 none period=5\n")), std::invalid_argument);
+}
+
+TEST(GridTest, NoC1TakesEveryCrossWhileABullishC1BlocksTheShorts)
+{
+    const AlignedData in = dataOf(trending(40)), out = dataOf(trending(30));
+    const auto without = grid({fixedLine("a")}, {GridC1{"none", nullptr}}, in, out);
+    const auto with = grid({fixedLine("a")}, {bullish("c")}, in, out);
+
+    ASSERT_EQ(without.size(), 1u);
+    EXPECT_TRUE(without[0].error.empty()) << without[0].error;
+    EXPECT_EQ(without[0].c1, "none");
+    EXPECT_GT(without[0].oosTrades, with[0].oosTrades);
+}
+
+TEST(GridTest, NoC1WorksWithTheC1ExitSwitch)
+{
+    GridOptions o = options();
+    o.c1Exit = true;           // there is no C1 to exit on: the switch changes nothing and must not crash
+    const AlignedData in = dataOf(trending(40)), out = dataOf(trending(30));
+    const auto rows = grid({fixedLine("a")}, {GridC1{"none", nullptr}}, in, out, o);
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_TRUE(rows[0].error.empty()) << rows[0].error;
+    EXPECT_DOUBLE_EQ(rows[0].oosExpectancyR, grid({fixedLine("a")}, {GridC1{"none", nullptr}}, in, out)[0].oosExpectancyR);
+}
+
+TEST(GridTest, TheC1CanAlsoExitTheTrades)
+{
+    const AlignedData in = dataOf(trending(40)), out = dataOf(trending(30));
+    const std::vector<GridC1> c1{{"turns", std::make_shared<Alternating>(4)}};
+
+    GridOptions off = options();
+    GridOptions on = options();
+    on.c1Exit = true;
+    const auto without = grid({fixedLine("a")}, c1, in, out, off);
+    const auto with = grid({fixedLine("a")}, c1, in, out, on);
+
+    ASSERT_EQ(with.size(), 1u);
+    EXPECT_TRUE(with[0].error.empty()) << with[0].error;
+    // a trade whose C1 turns against it is closed there, so the result differs from the run without the exit
+    EXPECT_NE(with[0].oosExpectancyR, without[0].oosExpectancyR);
+}
+
+TEST(GridTest, TheC1ExitIsOffByDefaultAndDoesNotChangeTheCallersOptions)
+{
+    GridOptions o = options();
+    EXPECT_FALSE(o.c1Exit);
+    o.c1Exit = true;
+    grid({fixedLine("a")}, {bullish("c")}, dataOf(trending(40)), dataOf(trending(30)), o);
+    EXPECT_EQ(o.nnfx.components.exitIndicator, nullptr);     // the grid puts the C1 in per pair, not in the caller's options
+}
+
+TEST(GridTest, TheTableSaysTheC1AlsoExits)
+{
+    GridOptions on = options();
+    on.c1Exit = true;
+    const AlignedData in = dataOf(trending(40)), out = dataOf(trending(30));
+    EXPECT_NE(gridTable(grid({fixedLine("a")}, {bullish("c")}, in, out, on), on).find("C1 also exits"), std::string::npos);
+    EXPECT_EQ(gridTable(grid({fixedLine("a")}, {bullish("c")}, in, out), options()).find("C1 also exits"), std::string::npos);
+}
+
+TEST(GridTest, ARealExitIndicatorAndTheC1ExitCannotBeCombined)
+{
+    GridOptions o = options();
+    o.c1Exit = true;
+    o.nnfx.components.exitIndicator = std::make_shared<Bullish>();
+    EXPECT_THROW(grid({fixedLine("a")}, {bullish("c")}, dataOf(trending(40)), dataOf(trending(30)), o), std::invalid_argument);
+}
+
+TEST(GridTest, TheTableSaysWhichExitWasUsed)
+{
+    GridOptions crossBack = options();
+    crossBack.nnfx.exitOnCross = true;
+    const AlignedData in = dataOf(trending(40)), out = dataOf(trending(30));
+    const std::string with = gridTable(grid({fixedLine("a")}, {bullish("c")}, in, out, crossBack), crossBack);
+    const std::string without = gridTable(grid({fixedLine("a")}, {bullish("c")}, in, out), options());
+
+    EXPECT_NE(with.find("with the cross-back exit"), std::string::npos);
+    EXPECT_NE(without.find("without the cross-back exit"), std::string::npos);
 }

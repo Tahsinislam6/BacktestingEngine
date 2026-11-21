@@ -235,3 +235,19 @@ TEST(MergeSundayBarsTest, TheResultIsStillSortedAndHasNoSundays)
     }
     EXPECT_EQ(merged.bars.size(), 60u);                // Saturdays stay, Sundays go: 6 per week
 }
+
+TEST(MergeSundayBarsTest, TheVolumesAreAdded)
+{
+    Bar sunday = bar(kSunday, 1.0, 1.2, 0.9, 1.1);
+    sunday.volume = 150.0;
+    Bar monday = bar(kMonday, 1.1, 1.5, 1.0, 1.4);
+    monday.volume = 9000.0;
+    Bar tuesday = bar(kTuesday, 1.4, 1.6, 1.3, 1.5);
+    tuesday.volume = 7000.0;
+
+    const BarSeries out = mergeSundayBars(seriesOf({sunday, monday, tuesday}));
+
+    ASSERT_EQ(out.bars.size(), 2u);
+    EXPECT_DOUBLE_EQ(out.bars[0].volume, 9150.0);          // Sunday + Monday
+    EXPECT_DOUBLE_EQ(out.bars[1].volume, 7000.0);          // an ordinary day is untouched
+}

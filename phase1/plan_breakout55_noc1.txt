@@ -1,0 +1,8 @@
+# Phase one, plan H: the 55-day breakout with NO C1 confirmation (the cross alone), run under many exit/entry strategies
+# STATUS: requested by the user 2026-11-18 ("no test with no c1"). FROZEN once run.
+# 'c1 none' is the explicit exception to the project's "a baseline is never run alone" rule: the user asked for the breakout by itself.
+# Baselines as in plan G (phase1/plan_breakout55.txt): turtle_channel 55/55 (pure breakout) and 55/20 (Turtle System 2).
+# Runs use --no-chase-limit. 2 pairs per config; configs that need a C1 (c1-exit, confirm-window) are left out.
+baseline turtle_channel trade=55,stop=55
+baseline turtle_channel trade=55,stop=20
+c1 none

@@ -54,10 +54,24 @@ pass that too. In the header, `#include "../../components.hpp"`; in the test, `#
 - A **Gate** component (`allows()`) is a filter (`--filter <name>`): the entry is only taken when it allows.
 - Component parameters are FIXED (`defaults()`), never searched: they add no tuning freedom.
 - Other nnfx switches: `--one-candle`, `--continuation`, `--max-open-risk 0.06`, `--max-per-currency 2`.
+- `--no-scaling`: one trade per signal with the whole 2% risk and no take-profit half; no breakeven; the stop trails 1.5 ATR behind the best close from the bar after entry (logged as `no-scaling` in the setup column). Plan B with it (2026-11-18): 0 finalists, mean OOS -0.0525R.
+- `--stop-atr <x>` (default 1.5), `--atr-period <n>` (14), `--risk <x>` (risk of the whole signal, default 0.02), `--no-trail` (no trail, no breakeven) and, for the grid, `--cross-exit` (close on the next baseline cross; the random-direction control closes at the next cross either way; the grid runs WITHOUT the cross-back exit unless this is given). a plan line `c1 none` (no confirmation, the cross alone; plan H, the 55-day breakout with no C1, ran 36 pairs: 0 finalists), `--max-distance <x>` / `--no-chase-limit` (the don't-chase limit, default 1 ATR; plan G, the 55-day breakout, ran 1,066 pairs without it: 0 finalists), `--c1-exit` (grid only: each pair's C1 also closes a trade when its state turns against it; the random control reads the C1 against the SIGNAL's direction, not the random trade's; run on plan B 2026-11-18: plain -0.031R and default -0.031R mean OOS, both 0 finalists; any further run is a new counted try). The user's plain strategy = `--no-scaling --no-trail --stop-atr 2.5 --atr-period 20 --risk 0.0025 --cross-exit`: plan B 2026-11-18, 0 finalists, mean OOS -0.0369R, mean beats 9.9%.
+- `--trail-after <x>`: as `--no-scaling`, but the stop stays at its start until a close is x times the ATR at entry in profit, then trails 1.5 x the ENTRY ATR behind the best close (the user's rule). Plan B with x = 2 (2026-11-18): 0 finalists, mean OOS -0.0671R.
 Example: `... --baseline kijun --params period=26 --confirm rsi --filter atr_expansion --max-per-currency 2`
-Current components (15): State: adx_di, andean_oscillator, aroon, bears_bulls_impulse, chandelier_exit (an exit), cmo,
-disparity_index, hlc_trend, laguerre, lwpi, pmo, rsi, tii, ttf. Gate: atr_expansion. (Every added indicator raises the number of
-tries a future grid must count; the phase-one plan was frozen with 8 C1s.)
+Current components (19): State: adx_di, andean_oscillator, aroon, bears_bulls_impulse, chandelier_exit (an exit), cmo,
+disparity_index, hlc_trend, laguerre, lwpi, pmo, rsi, tii, ttf. Gate (filters): adx_strength, atr_expansion, normalized_volume,
+ttms, volatility_ratio. (Every added indicator raises the number of tries a future test must count; the phase-one plans were
+frozen with 8 and 13 C1s.)
+
+## Volume (added 2026-11-17)
+
+`Bar::volume` is read from the data file's column named `volume` (any capitals, from the 6th column on; no such column = 0) by
+`loadCsv`; folding a Sunday bar into Monday adds the two volumes; it flows unchanged through the aligned snapshots. It is an
+FX feed's tick/size volume: the scale drifts a lot over the years (e.g. CHFJPY's median 504k in 2006 vs 122k in 2025, with
+spikes of 31M), so only a bar's volume relative to its own recent average means anything. Real-volume components so far:
+`normalized_volume` (a gate: volume above `level` percent of its `period`-bar average). The other new gates (`volatility_ratio`,
+`ttms` squeeze, `adx_strength`) are volatility/trend-strength gates computed from price, which is what NNFX's "volume"
+indicators mostly are. A gate is used with `--filter <name>`.
 
 Testing a component (does it add anything?): add `--component-control 100`. For each chosen component it runs the
 system with the real component, without it, and with 100 random stand-ins that show the same state frequencies and
@@ -123,8 +137,12 @@ some of it up.
 `./build/backtester --grid phase1/plan.txt --insample ../data/post2016-in-sample --outsample ../data/post2016-out-of-sample
 --holdout ../data/pre2016-all --costs costs.csv --log-dir results --note "<the pass rule, written BEFORE the run>"
 --ledger .claude/results/tries_ledger.md [--prior-tries N] [--control 200] [--min-beats 0.9] [--min-expectancy 0.03]`
-- Two plan files exist: `phase1/plan.txt` (8 C1s, FROZEN, run twice) and `phase1/plan_13c1.txt` (13 C1s, 364 pairs, DRAFT until approved;
-  its header holds the pass rule and the counting of tries). A plan file pre-registers the run: `baseline <name> <params>` lines (parameters fixed, inside the
+- Plan files: `phase1/plan.txt` (8 C1s, FROZEN, run twice), `phase1/plan_13c1.txt` (13 C1s, 364 pairs, FROZEN, run once),
+  `phase1/plan_lwpi.txt` (FROZEN, run once on 2006-2015) and `phase1/plan_hlc.txt` (the hlc_trend(close_period=10) lead on 2006-2015: 33 pairs, FROZEN, did not replicate), `phase1/plan_sweep.txt` (parameter sweep: 130 baseline variants x 39 C1 variants = 5,070 pairs, FROZEN, run once 2026-11-18, 0 finalists; a plan may repeat a baseline with other parameters and a `c1` line may carry parameters, e.g. `c1 rsi period=7`, shown as `rsi(period=7)` in the log) and `phase1/plan_filters.txt` (13 C1s x 5 filters = 1,820 pairs, DRAFT until
+  approved; counting M = 2,184 with `--prior-tries 364`). A plan may also list `filter <name>` lines (Gate components): every baseline x C1 is
+  then run with EACH filter (no `filter` lines = no filter), the filter gates the pair AND its random-direction runs, and `grid_log.csv` has a
+  `filter` column (the older log without it was moved to `results/grid_log_v1_no_filter_column.csv`). The header of a plan holds the pass rule
+  and the counting of tries. A plan file pre-registers the run: `baseline <name> <params>` lines (parameters fixed, inside the
   baseline's ranges) and `c1 <name>` lines (State components). It is checked by a test; once the first real run is made it
   never changes. It is a DRAFT until the user approves it.
 - Per pair (always without the cross-back exit): the system is run on the in-sample and the out-of-sample folder, and its

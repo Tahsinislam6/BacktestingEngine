@@ -454,6 +454,7 @@ TEST(ResultLog, GridRowsCarryTheGridNumbers)
     r.baseline = "kijun";
     r.params = "period=26";
     r.c1 = "aroon";
+    r.filter = "ttms";
     r.inSampleTrades = 900;
     r.inSampleExpectancyR = 0.011;
     r.oosTrades = 880;
@@ -477,6 +478,7 @@ TEST(ResultLog, GridRowsCarryTheGridNumbers)
     EXPECT_EQ(field(h, rows[0], "baseline"), "kijun");
     EXPECT_EQ(field(h, rows[0], "params"), "period=26");
     EXPECT_EQ(field(h, rows[0], "c1"), "aroon");
+    EXPECT_EQ(field(h, rows[0], "filter"), "ttms");
     EXPECT_EQ(field(h, rows[0], "in_sample_trades"), "900");
     EXPECT_DOUBLE_EQ(std::stod(field(h, rows[0], "in_sample_expectancy_r")), 0.011);
     EXPECT_EQ(field(h, rows[0], "oos_trades"), "880");
@@ -550,4 +552,44 @@ TEST(ResultLog, AnExistingLedgerIsOnlyAppendedTo)
     ASSERT_EQ(l.size(), 3u);
     EXPECT_EQ(l[0], "my own header");
     EXPECT_EQ(l[2], "| new |");
+}
+
+TEST(ResultLog, SetupTextSaysWhenScalingOutIsOff)
+{
+    CliOptions off;
+    off.noScaling = true;
+    EXPECT_NE(setupText(off).find("no-scaling"), std::string::npos);
+    EXPECT_EQ(setupText(CliOptions{}).find("no-scaling"), std::string::npos);
+}
+
+TEST(ResultLog, SetupTextSaysTheTrailAfterThreshold)
+{
+    CliOptions c;
+    c.trailAfter = 2.0;
+    EXPECT_NE(setupText(c).find("trail-after=2"), std::string::npos);
+    EXPECT_EQ(setupText(CliOptions{}).find("trail-after"), std::string::npos);
+}
+
+TEST(ResultLog, SetupTextSaysWhenTheChaseLimitIsRemoved)
+{
+    CliOptions c;
+    c.noChaseLimit = true;
+    EXPECT_NE(setupText(c).find("no-chase-limit"), std::string::npos);
+}
+
+TEST(ResultLog, SetupTextSaysTheStopRiskAtrAndExitSwitches)
+{
+    CliOptions c;
+    c.stopAtr = 2.5;
+    c.atrPeriod = 20;
+    c.risk = 0.0025;
+    c.noTrail = true;
+    c.crossExit = true;
+    c.c1Exit = true;
+    c.maxDistance = 4.0;
+    const std::string s = setupText(c);
+    for (const char* part : {"stop-atr=2.5", "atr-period=20", "risk=0.0025", "no-trail", "cross-exit", "c1-exit", "max-distance=4"})
+        EXPECT_NE(s.find(part), std::string::npos) << part << " missing from: " << s;
+    for (const char* part : {"stop-atr", "atr-period", "risk=", "no-trail", "cross-exit", "c1-exit", "max-distance", "no-chase-limit"})
+        EXPECT_EQ(setupText(CliOptions{}).find(part), std::string::npos) << part;
 }

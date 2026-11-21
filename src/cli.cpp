@@ -56,6 +56,30 @@ CliOptions parseArgs(const std::vector<std::string>& args)
             continue;
         }
 
+        if (flag == "--no-trail")
+        {
+            o.noTrail = true;
+            continue;
+        }
+
+        if (flag == "--c1-exit")
+        {
+            o.c1Exit = true;
+            continue;
+        }
+
+        if (flag == "--cross-exit")
+        {
+            o.crossExit = true;
+            continue;
+        }
+
+        if (flag == "--no-scaling")
+        {
+            o.noScaling = true;
+            continue;
+        }
+
         if (flag == "--continuation")
         {
             o.continuation = true;
@@ -119,6 +143,36 @@ CliOptions parseArgs(const std::vector<std::string>& args)
         else if (flag == "--filter")         { o.filter = value(); }
         else if (flag == "--confirm-window") { o.confirmWindow = static_cast<int>(toWholeNumber(flag, value(), 1)); }
         else if (flag == "--max-per-currency") { o.maxPerCurrency = static_cast<int>(toWholeNumber(flag, value(), 1)); }
+        else if (flag == "--stop-atr")
+        {
+            const double v = toDouble(flag, value());
+            if (!(v > 0.0))
+                throw std::invalid_argument("--stop-atr must be above 0 (e.g. 2.5 for a stop 2.5 ATR from the entry)");
+            o.stopAtr = v;
+        }
+        else if (flag == "--max-distance")
+        {
+            const double v = toDouble(flag, value());
+            if (!(v > 0.0))
+                throw std::invalid_argument("--max-distance must be above 0 (ATR from the line, default 1)");
+            o.maxDistance = v;
+        }
+        else if (flag == "--no-chase-limit") { o.noChaseLimit = true; }
+        else if (flag == "--atr-period") { o.atrPeriod = static_cast<int>(toWholeNumber(flag, value(), 1)); }
+        else if (flag == "--risk")
+        {
+            const double v = toDouble(flag, value());
+            if (!(v > 0.0) || v > 0.5)
+                throw std::invalid_argument("--risk must be above 0 and at most 0.5 (e.g. 0.0025 for 0.25% of the account per trade)");
+            o.risk = v;
+        }
+        else if (flag == "--trail-after")
+        {
+            const double v = toDouble(flag, value());
+            if (!(v > 0.0))
+                throw std::invalid_argument("--trail-after must be above 0 (ATRs of profit at entry's ATR before the stop trails)");
+            o.trailAfter = v;
+        }
         else if (flag == "--max-open-risk")
         {
             const double v = toDouble(flag, value());
@@ -205,8 +259,14 @@ CliOptions parseArgs(const std::vector<std::string>& args)
                                     "(only those results are logged)");
     if (o.entryControl > 0 && o.confirm.empty() && o.filter.empty())
         throw std::invalid_argument("--entry-control needs --confirm or --filter to control (an exit indicator does not pick entries)");
-    if (o.control > 0 && !o.noCrossExit && o.gridFile.empty())
-        throw std::invalid_argument("--control needs --no-cross-exit (a random trade may start against the line)");
+    if (o.crossExit && o.gridFile.empty())
+        throw std::invalid_argument("--cross-exit is for --grid (a single run already closes on the cross unless --no-cross-exit)");
+    if (o.maxDistance && o.noChaseLimit)
+        throw std::invalid_argument("--max-distance and --no-chase-limit cannot be combined");
+    if (o.c1Exit && o.gridFile.empty())
+        throw std::invalid_argument("--c1-exit is for --grid (a single run can use --exit-indicator)");
+    if (o.crossExit && o.noCrossExit)
+        throw std::invalid_argument("--cross-exit and --no-cross-exit cannot be combined");
     if (markupGiven && o.ratesFile.empty())
         throw std::invalid_argument("--swap-markup needs --rates (the markup is added to the swap from the rates file)");
     if (o.noCosts && (!o.costsFile.empty() || multiplierGiven))
@@ -232,6 +292,20 @@ std::string usage()
         "  --exit-indicator <name>  a state component that closes a trade when it turns against it\n"
         "  --filter <name>          a gate component (e.g. atr_expansion) that must allow the entry\n"
         "  --one-candle             a signal that cannot be taken on the cross bar gets one more bar\n"
+        "  --no-scaling             one trade per signal with the whole 2% risk and no take-profit half; its stop trails the best\n"
+        "                           close from the first bar (there is no target to start the trail or the breakeven stop)\n"
+        "  --trail-after <x>        one trade per signal with the whole 2% risk (as --no-scaling), the stop stays put until a close is\n"
+        "                           x times the ATR at entry in profit, then trails 1.5 times that ATR behind the best close\n"
+        "  --stop-atr <x>           stop distance in ATR from the entry (default 1.5)\n"
+        "  --atr-period <n>         ATR period for the stop and the chase check (default 14)\n"
+        "  --risk <x>               share of the account lost if the stop is hit, for the whole signal (default 0.02; 0.0025 = 0.25%)\n"
+        "  --no-trail               no trailing stop and no breakeven stop (the stop stays where it started)\n"
+        "  --max-distance <x>       skip an entry whose close is further than x ATR from the line (default 1)\n"
+        "  --no-chase-limit         take every signal however far the close is from the line\n"
+        "  --c1-exit                grid: each pair's C1 also closes a trade when its state turns against it (the control reads it\n"
+        "                           against the signal's direction)\n"
+        "  --cross-exit             grid: close on the next baseline cross; the random-direction control closes at the next cross\n"
+        "                           whichever way it went (the grid runs without that exit unless this is given)\n"
         "  --continuation           re-enter while price stays on the same side of the baseline\n"
         "  --max-open-risk <x>      cap on the total risk of open signals as a share of equity (0.06 = 6%)\n"
         "  --max-per-currency <n>   cap on net signals per currency (long EURUSD and GBPUSD both short USD)\n"
@@ -251,7 +325,7 @@ std::string usage()
         "  --entry-control <n>      does the chosen --confirm / --filter pick better entries than n random components that\n"
         "                           behave the same? Measured on the entry study (no stops or sizing)\n"
         "  --component-control <n>  compare each chosen component with n random ones that behave the same\n"
-        "  --control <n>            compare the baseline's direction with n random-direction runs (needs --no-cross-exit)\n"
+        "  --control <n>            compare the baseline's direction with n random-direction runs (with the cross-back exit the random arm closes at the next cross either way)\n"
         "  --no-cross-exit          do not close when the baseline crosses back (stop, target, breakeven only)\n"
         "  --log-dir <folder>       append every control / entry-study result to the csv logs in this folder (one file per test type)\n"
         "  --note <text>            with --log-dir: why this test was run and the pass rule (kept in the log rows)\n"

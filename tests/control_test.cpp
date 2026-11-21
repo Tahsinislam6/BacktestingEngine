@@ -211,9 +211,6 @@ TEST(ControlTest, RejectsWhatCannotBeComparedLikeForLike)
     const AlignedData d = dataOf(trending(10));
 
     EXPECT_THROW(runDirectionControl(d, level100(), maker, exitsOnly(), 0, grid()), std::invalid_argument);
-    NnfxOptions crossBack = exitsOnly();
-    crossBack.exitOnCross = true;
-    EXPECT_THROW(runDirectionControl(d, level100(), maker, crossBack, 5, grid()), std::invalid_argument);
     NnfxOptions seeded = exitsOnly();
     seeded.randomSeed = 3;
     EXPECT_THROW(runDirectionControl(d, level100(), maker, seeded, 5, grid()), std::invalid_argument);
@@ -265,4 +262,17 @@ TEST(ControlSwapTest, EveryArmPaysTheSwapOfTheOptions)
     ASSERT_EQ(a.random.size(), b.random.size());
     for (std::size_t i = 0; i < a.random.size(); ++i)
         EXPECT_NE(a.random[i].expectancyR, b.random[i].expectancyR) << i;
+}
+
+TEST(ControlTest, TheCrossBackExitCanBeUsedByBothArms)
+{
+    // the random arm closes at the next cross whichever way it went, so the comparison is like for like
+    NnfxOptions crossBack = exitsOnly();
+    crossBack.exitOnCross = true;
+    const ControlResult r = runDirectionControl(dataOf(reversing(20)), level100(), maker, crossBack, 5, grid());
+
+    EXPECT_EQ(r.random.size(), 5u);
+    EXPECT_GT(r.baseline.trades, 0);
+    for (const ArmResult& a : r.random)
+        EXPECT_GT(a.trades, 0);
 }

@@ -28,6 +28,9 @@ struct NnfxOptions
     bool breakeven{true};                       // after the target is hit, move the runner's stop to its entry price
     std::optional<double> trailAtr{1.5};        // after the target, trail the runner's stop this many ATR behind the
                                                 // best close since entry; nullopt = no trailing stop
+    std::optional<double> trailAfterAtr;        // needs entry.scaleOut == false and a trailAtr: the stop stays at its start until a
+                                                // close is this many ATR (the ATR at entry) in profit, then trails trailAtr x the
+                                                // ENTRY ATR behind the best close; nullopt = the usual rules
     int atrPeriod{14};
 
     // Other NNFX components (each may be empty) and how they are used:
@@ -44,7 +47,7 @@ struct NnfxOptions
 
     // CONTROL: when set, the signal timing is still the baseline cross but every entry's direction is a coin
     // flip (seeded, so repeatable), to see whether the baseline's direction adds anything over luck.
-    // Needs exitOnCross == false. The other checks (confirmation, filter, limits) use the baseline's direction.
+    // With exitOnCross a random trade is closed by the next cross either way. The other checks (confirmation, filter, limits) use the baseline's direction.
     std::optional<std::uint64_t> randomSeed;
 };
 
@@ -79,7 +82,7 @@ public:
     NnfxStrategy(std::size_t assets, const B& prototype, const NnfxOptions& options = NnfxOptions{})
         : options_(options), lines_(assets, prototype), atrs_(assets, Atr(checkedPeriod(options))),
           assets_(assets), side_(assets, 0), best_(assets, 0.0), tracking_(assets, false),
-          pendingDir_(assets, 0), pendingLeft_(assets, 0), lastDir_(assets, 0), cooldown_(assets, 0),
+          entryAtr_(assets, 0.0), signalSign_(assets, 0), pendingDir_(assets, 0), pendingLeft_(assets, 0), lastDir_(assets, 0), cooldown_(assets, 0),
           currencies_(assets), rng_(options.randomSeed.value_or(0))
     {
         validateNnfxRules(options.entry);
@@ -87,8 +90,15 @@ public:
             throw std::invalid_argument("maxDistanceAtr must be positive");
         if (options.trailAtr && !(*options.trailAtr > 0.0))
             throw std::invalid_argument("trailAtr must be positive");
-        if (options.randomSeed && options.exitOnCross)
-            throw std::invalid_argument("a random direction cannot be combined with the cross-back exit");
+        if (options.trailAfterAtr)
+        {
+            if (!(*options.trailAfterAtr > 0.0))
+                throw std::invalid_argument("trailAfterAtr must be positive");
+            if (options.entry.scaleOut)
+                throw std::invalid_argument("trailAfterAtr needs a single trade (scaleOut false)");
+            if (!options.trailAtr)
+                throw std::invalid_argument("trailAfterAtr needs a trailing stop (trailAtr)");
+        }
         if (options.confirmationWindow < 1)
             throw std::invalid_argument("confirmationWindow must be at least 1");
         if (options.maxOpenRisk && !(*options.maxOpenRisk > 0.0))
@@ -195,7 +205,9 @@ public:
             {
                 for (const Trade* t : open)
                 {
-                    if ((t->direction == Direction::Long) != (now > 0))
+                    // the next cross closes a trade whichever way it went (for the real system that is always the opposite
+                    // signal; a random-direction trade may have started against the line)
+                    if (options_.randomSeed || (t->direction == Direction::Long) != (now > 0))
                         closeTrade(t, ExitReason::Signal);
                 }
             }
@@ -207,11 +219,17 @@ public:
                 // close, whichever protects more; a tie counts as breakeven
                 std::optional<double> level;
                 ExitReason reason = ExitReason::Breakeven;
-                if (options_.breakeven)
+                // without scaling out the lone trade has no target to arm it: a breakeven stop would cancel its stop at once
+                if (options_.breakeven && options_.entry.scaleOut)
                     level = runner->entryPrice;
-                if (options_.trailAtr)
+                // trailAfterAtr: nothing moves until a close is far enough in profit (measured in the ATR at entry); the trail
+                // distance is then also in the entry ATR
+                const bool waiting = options_.trailAfterAtr &&
+                    (isLong ? best_[a] - runner->entryPrice : runner->entryPrice - best_[a]) <
+                        *options_.trailAfterAtr * entryAtr_[a] - 1e-9;
+                if (options_.trailAtr && !waiting)
                 {
-                    const double trail = *options_.trailAtr * atrs_[a].value();
+                    const double trail = *options_.trailAtr * (options_.trailAfterAtr ? entryAtr_[a] : atrs_[a].value());
                     const double trailLevel = isLong ? best_[a] - trail : best_[a] + trail;
                     if (!level || (isLong ? trailLevel > *level : trailLevel < *level))
                     {
@@ -236,7 +254,8 @@ public:
                 const int state = exit_[a]->state();
                 for (const Trade* t : open)
                 {
-                    const int sign = t->direction == Direction::Long ? 1 : -1;
+                    // the state that let the entry in is the signal's; a random-direction trade may point the other way
+                    const int sign = options_.randomSeed ? signalSign_[a] : (t->direction == Direction::Long ? 1 : -1);
                     if (state == -sign)
                         closeTrade(t, ExitReason::Indicator);
                 }
@@ -298,6 +317,8 @@ public:
                         direction = (rng_() >> 63) ? Direction::Long : Direction::Short;
 
                     tracking_[a] = false;          // the new trades start their own best close
+                    entryAtr_[a] = atr;
+                    signalSign_[a] = buy ? 1 : -1;
                     for (const Order& o : nnfxEntryOrders(direction, close, atr, equity, asset, options_.entry))
                         orders.push_back(o);
 
@@ -406,6 +427,8 @@ private:
     std::vector<int> side_;      // +1 above the line, -1 below, 0 = not seen yet
     std::vector<double> best_;   // best close since entry, per asset (valid while tracking_)
     std::vector<bool> tracking_;
+    std::vector<double> entryAtr_;    // the ATR at the last entry, per asset (for trailAfterAtr)
+    std::vector<int> signalSign_;     // +1/-1: the direction of the baseline signal at the last entry (the control's trade may differ)
     std::vector<int> pendingDir_;     // direction of the signal waiting to be taken
     std::vector<int> pendingLeft_;    // bars it has left
     std::vector<int> lastDir_;        // direction of the last signal taken, forgotten at the next cross

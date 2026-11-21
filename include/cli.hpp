@@ -23,6 +23,16 @@ struct CliOptions
     std::string filter;                 // nnfx: a Gate component that must allow the entry
     int confirmWindow{7};               // bars a signal waits for its confirmation
     bool oneCandle{false};              // nnfx: a signal that cannot be taken on the cross bar gets one more bar
+    std::optional<double> stopAtr;      // nnfx: stop distance in ATR (default 1.5)
+    std::optional<int> atrPeriod;       // nnfx: ATR period for the stop, the target and the chase check (default 14)
+    std::optional<double> risk;         // nnfx: share of the account lost if the stop is hit, for the whole signal (default 0.02)
+    bool noTrail{false};                // nnfx: no trailing stop and no breakeven stop
+    std::optional<double> maxDistance;  // nnfx: skip an entry whose close is further than this many ATR from the line (default 1)
+    bool noChaseLimit{false};           // nnfx: take every signal however far the close is from the line (a breakout channel's line is far away)
+    bool c1Exit{false};                 // grid: each pair's C1 also closes a trade when its state turns against it
+    bool crossExit{false};              // grid: close on the next baseline cross (the grid otherwise runs without that exit)
+    std::optional<double> trailAfter;   // nnfx: one trade; its stop trails only after a close this many entry-ATR in profit
+    bool noScaling{false};              // nnfx: one trade per signal with the whole risk, no take-profit half, trail from entry
     bool continuation{false};           // nnfx: re-enter while price stays on the same side of the baseline
     std::optional<double> maxOpenRisk;      // nnfx: cap on the total risk of open signals, as a share of equity
     std::optional<int> maxPerCurrency;      // nnfx: cap on net signals per currency

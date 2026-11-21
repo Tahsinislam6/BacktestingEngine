@@ -1,0 +1,47 @@
+# Phase one, plan F: THE hlc_trend(close_period=10) LEAD ON 2006-2015
+#   ./build/backtester --grid phase1/plan_hlc.txt --insample ../data/pre2016-in-sample --outsample ../data/pre2016-out-of-sample ...
+# STATUS: written 2026-11-18 at the user's request, FROZEN once run.
+# The lead: in the parameter sweep (plan E, 2016-2025) the five biggest out-of-sample rows all used hlc_trend with close_period=10
+#   (trimagen 40, ssl 20, sinewma 40, coral 51, ema 30). None survived the correction, so none was ever run on 2006-2015.
+# Pairs: the 28 baselines of plan B (identical lines) + those five baseline variants, each x hlc_trend(close_period=10) = 33 pairs.
+# Counting: M = 33, --prior-tries 0 (2006-2015 was not searched for this lead). No holdout. Swap ON, default exits, 200 random runs.
+# Rule (also pasted in --note): THE LEAD REPLICATES only if, over the 28 plan-B baselines on 2006-2015, (a) mean OOS expectancy > 0 AND
+#   (b) mean IS expectancy > 0 AND (c) at least 8 of 28 beat >= 90% of their own random runs OOS. The five exact pairs are reported but
+#   do not decide. Success needs this rule AND at least one finalist of the grid rule (OOS >= 0.03R, beats >= 90%, adjusted beats >= 90%
+#   with M = 33, IS > 0). No rule changes after seeing results.
+
+baseline alma                    period=9
+baseline atr_based_ema_variant_1 fastest=14,multiplier=300
+baseline coral                   period=34
+baseline ehlers_3pole_butterworth period=15
+baseline ehlers_two_pole_super_smoother period=15
+baseline ema                     period=20
+baseline frama                   period=16
+baseline gchannel                period=100
+baseline gd                      length=20,vf=0.7
+baseline geomin_ma               period=10
+baseline half_trend              amplitude=2
+baseline hma                     period=21
+baseline kalman_filter           k=1,sharpness=1
+baseline kama                    period=10,slow=30
+baseline kijun                   period=26
+baseline mcginley                period=12,constant=5
+baseline ptl_fast                length=3
+baseline range_filter_modified   atr_period=14,multiplier=3
+baseline recursivema             period=2,iterations=20
+baseline sinewma                 period=20
+baseline sma                     period=20
+baseline ssl                     period=10
+baseline super_smoother          period=10
+baseline t3_ma                   length=10,b=0.88
+baseline third_gen_ma            period=220,ratio=4
+baseline trimagen                period=20
+baseline turtle_channel          trade=20,stop=10
+baseline vidya                   period=10,histper=30
+baseline trimagen period=40
+baseline ssl period=20
+baseline sinewma period=40
+baseline coral period=51
+baseline ema period=30
+
+c1 hlc_trend close_period=10

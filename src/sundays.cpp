@@ -43,6 +43,7 @@ BarSeries mergeSundayBars(const BarSeries& series)
             merged.open = bar.open;
             merged.high = std::max(bar.high, merged.high);
             merged.low = std::min(bar.low, merged.low);
+            merged.volume = bar.volume + merged.volume;
             out.bars.push_back(merged);
             ++i;                                            // the Monday bar is used up
         }

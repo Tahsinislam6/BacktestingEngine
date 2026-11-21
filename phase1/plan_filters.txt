@@ -1,0 +1,74 @@
+# Phase one, plan D: every baseline x every one of the 13 confirmations x every one of the 5 filters, in one batch
+#   ./build/backtester --grid phase1/plan_filters.txt --insample ../data/post2016-in-sample --outsample ../data/post2016-out-of-sample ...
+# STATUS: APPROVED by the user on 2026-11-17 (counting: --prior-tries 364, M = 2,184) and RUN ONCE the same day (0 finalists of 1,820 pairs). FROZEN: never edit.
+#
+# Question: does a baseline + C1 have directional skill WHEN A FILTER says conditions are right? NNFX uses the volume/volatility filter to
+#   stay out of choppy markets where baseline crosses are noise, so a baseline's direction could be informative only in the filtered
+#   periods, which the unfiltered grids averaged away. Each pair is compared with random-direction runs of the SAME system under the
+#   SAME filter, so the effect of simply trading less (and paying less spread) is not counted as skill.
+# What is new compared with plans A (plan.txt) and B (plan_13c1.txt): the five filters below (gate components, default parameters, never
+#   searched). The 28 baseline lines are identical to the frozen plans and the 13 C1s are plan B's (a test checks both).
+#   28 x 13 x 5 = 1,820 pairs, none of which has been run. Without a filter the 364 baseline x C1 pairs were already tested (plan B).
+# Counting the tries: the family is the 364 filter-free pairs plus these 1,820 = 2,184 distinct pairs, so run with --prior-tries 364
+#   (M = 1,820 + 364 = 2,184). That is a high bar: a pair needs a score far above anything seen so far.
+# Run with swap ON (--rates ../data/rates.csv, markup 0; no Singapore rate), spreads from costs.csv, 200 random-direction runs.
+#   Volume: normalized_volume reads Bar::volume (the data files' volume column, an FX feed volume whose scale drifts; it is used only
+#   relative to its own 14-bar average). The other four gates are volatility / trend-strength gates computed from price.
+# Data and holdout: 2016-2025 as the selection data (post2016-in-sample / post2016-out-of-sample). No holdout is given: the 2006-2015 data
+#   has been used up for baseline + C1 tests (plan C), so a pass would be a FINALIST, to be checked on newly arriving data.
+# Pass rule (paste into --note BEFORE running; same as every earlier grid, with M = 2,184):
+#   FINALIST = out-of-sample expectancy >= 0.03R AND beats >= 90% of its own 200 random-direction runs AND adjusted beats F(z)^M >= 90%
+#   with M = 2,184 AND in-sample expectancy > 0. No rule changes after seeing results.
+#
+# Baseline parameters: the fixed conventional values of the frozen plans (sources [mt4] [class] [conv] [guess] as there).
+
+baseline alma                    period=9                        # [conv] ALMA window 9
+baseline atr_based_ema_variant_1 fastest=14,multiplier=300       # [mt4] EMA_Fastest 14, multiplier 300
+baseline coral                   period=34                       # [mt4] gi_84 = 34
+baseline ehlers_3pole_butterworth period=15                      # [mt4] TPSSPeriod 15
+baseline ehlers_two_pole_super_smoother period=15                # [mt4] CutoffPeriod 15
+baseline ema                     period=20                       # [class] default 20
+baseline frama                   period=16                       # [conv] FRAMA 16
+baseline gchannel                period=100                      # [mt4] ChannelPeriod 100
+baseline gd                      length=20,vf=0.7                # [conv] generalized DEMA, volume factor 0.7
+baseline geomin_ma               period=10                       # [mt4] Length 10
+baseline half_trend              amplitude=2                     # [mt4] Amplitude 2
+baseline hma                     period=21                       # [conv] HMA 21
+baseline kalman_filter           k=1,sharpness=1                 # [guess]
+baseline kama                    period=10,slow=30               # [conv] Kaufman 10 / 2 / 30
+baseline kijun                   period=26                       # [class] default 26 (Ichimoku standard)
+baseline mcginley                period=12,constant=5            # [mt4] McgPeriod 12, McgConstant 5
+baseline ptl_fast                length=3                        # [mt4] FastLength 3
+baseline range_filter_modified   atr_period=14,multiplier=3      # [mt4] iATR 14, multiplier 3
+baseline recursivema             period=2,iterations=20          # [mt4] InpPeriodMA 2, InpIteration 20
+baseline sinewma                 period=20                       # [mt4] Length 20
+baseline sma                     period=20                       # [conv] SMA 20
+baseline ssl                     period=10                       # [mt4] Lb 10
+baseline super_smoother          period=10                       # [conv] Ehlers' usual 10 (the .mq4 is not available)
+baseline t3_ma                   length=10,b=0.88                # [mt4] Length 10, b 0.88
+baseline third_gen_ma            period=220,ratio=4              # [mt4] MA_Period 220; sampling 50 -> ratio 4.4, ranges allow 4..8
+baseline trimagen                period=20                       # [mt4] InpPeriod 20
+baseline turtle_channel          trade=20,stop=10                # [mt4] TradePeriod 20, StopPeriod 10
+baseline vidya                   period=10,histper=30            # [guess]
+
+# The C1 pool (state components): the eight of plan A plus the five added later, as in plan B.
+c1 rsi
+c1 aroon
+c1 bears_bulls_impulse
+c1 adx_di
+c1 cmo
+c1 disparity_index
+c1 pmo
+c1 tii
+c1 andean_oscillator
+c1 hlc_trend
+c1 laguerre
+c1 lwpi
+c1 ttf
+
+# The filters (gate components, default parameters).
+filter adx_strength
+filter atr_expansion
+filter normalized_volume
+filter ttms
+filter volatility_ratio

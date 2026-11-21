@@ -32,3 +32,10 @@ PLAN B RUN 2026-11-17 (approved by the user, M = 364, prior-tries 0): 0 finalist
 
 PLAN C (lwpi lead on 2006-2015, M = 28): did NOT replicate (see findings-so-far.md). phase1/plan_lwpi.txt is FROZEN. The only unseen data left is the future:
 new data as it arrives (2026 on) and a demo forward test.
+
+FILTER DIMENSION built 2026-11-17: a grid plan may list `filter <gate>` lines; pairs become baseline x C1 x filter (tests + mutation check done; 1222 tests).
+Plan D = phase1/plan_filters.txt (28 baselines x 13 C1 x 5 filters: adx_strength, atr_expansion, normalized_volume, ttms, volatility_ratio = 1,820 pairs),
+DRAFT awaiting the user's approval; counting M = 2,184 via --prior-tries 364; swap ON; no holdout (2006-2015 is used up), so a pass would be a finalist
+to be checked on new data. The old grid log was renamed results/grid_log_v1_no_filter_column.csv because the header gained a `filter` column.
+
+PLAN D RUN 2026-11-17 (approved, --prior-tries 364, M = 2,184): 0 finalists. phase1/plan_filters.txt is FROZEN. Details in findings-so-far.md.

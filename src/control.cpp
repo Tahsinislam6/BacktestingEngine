@@ -116,8 +116,6 @@ ControlResult runDirectionControl(const AlignedData& data, const Params& params,
 {
     if (seeds < 1)
         throw std::invalid_argument("the control needs at least one random run");
-    if (options.exitOnCross)
-        throw std::invalid_argument("the control cannot use the cross-back exit (switch it off for both arms)");
     if (options.randomSeed)
         throw std::invalid_argument("the control chooses the random seeds itself");
 

@@ -83,6 +83,17 @@ TEST(BaselinesTest, SomeBaselinesAreRegistered)
     EXPECT_FALSE(baselineRegistry().empty());
 }
 
+// the 55-day breakout is turtle_channel with a 55-bar trade channel AND a 55-bar stop channel (the line is the opposite 55-bar extreme)
+TEST(BaselinesTest, TheTurtleChannelAllowsAFiftyFiveDayStopChannel)
+{
+    const BaselineInfo* b = findBaseline("turtle_channel");
+    ASSERT_NE(b, nullptr);
+    const Params p = parseParams("trade=55,stop=55", b->ranges);
+    EXPECT_DOUBLE_EQ(p.get("stop"), 55);
+    EXPECT_EQ(b->warmupBars(p), 56u);
+    EXPECT_THROW(parseParams("trade=55,stop=65", b->ranges), std::invalid_argument);      // still bounded
+}
+
 TEST(BaselinesTest, NamesAreUniqueSortedAndFindable)
 {
     const auto& all = baselineRegistry();

@@ -68,6 +68,92 @@ TEST_F(LoaderTest, IgnoresExtraColumns)
     EXPECT_DOUBLE_EQ(series.bars[0].close, 1.5);
 }
 
+// ---------- the volume column ----------
+// The file's header decides: a column named "volume" (any capitals) is read into Bar::volume; without one the volume is 0.
+
+TEST_F(LoaderTest, ReadsTheVolumeColumnByItsHeaderName)
+{
+    std::string path = writeCsv(
+        "timestamp,open,high,low,close,volume\n"
+        "1000,1.0,2.0,0.5,1.5,5557.58\n"
+        "2000,1.5,2.5,1.0,2.0,193941.5\n");
+
+    BarSeries series = loadCsv(path);
+
+    ASSERT_EQ(series.bars.size(), 2u);
+    EXPECT_DOUBLE_EQ(series.bars[0].volume, 5557.58);
+    EXPECT_DOUBLE_EQ(series.bars[1].volume, 193941.5);
+}
+
+TEST_F(LoaderTest, TheVolumeColumnCanBeAnywhereAfterTheFirstFive)
+{
+    std::string path = writeCsv(
+        "timestamp,open,high,low,close,adj_close,Volume,note\n"
+        "1000,1.0,2.0,0.5,1.5,1.4,777,hello\n");
+
+    BarSeries series = loadCsv(path);
+
+    EXPECT_DOUBLE_EQ(series.bars[0].volume, 777.0);
+    EXPECT_DOUBLE_EQ(series.bars[0].close, 1.5);
+}
+
+TEST_F(LoaderTest, WithoutAVolumeColumnTheVolumeIsZero)
+{
+    std::string path = writeCsv(
+        "timestamp,open,high,low,close\n"
+        "1000,1.0,2.0,0.5,1.5\n");
+
+    EXPECT_DOUBLE_EQ(loadCsv(path).bars[0].volume, 0.0);
+}
+
+TEST_F(LoaderTest, AColumnThatOnlyContainsVolumeInItsNameIsNotTheVolume)
+{
+    std::string path = writeCsv(
+        "timestamp,open,high,low,close,volume_usd\n"
+        "1000,1.0,2.0,0.5,1.5,42\n");
+
+    EXPECT_DOUBLE_EQ(loadCsv(path).bars[0].volume, 0.0);
+}
+
+TEST_F(LoaderTest, AColumnNamedVolumeAmongTheFirstFiveIsNotTheVolume)
+{
+    // the first five columns are always timestamp, open, high, low, close; a name in one of those places does not move the volume
+    std::string path = writeCsv(
+        "timestamp,open,high,low,volume\n"
+        "1000,1.0,2.0,0.5,1.5\n");
+
+    const BarSeries series = loadCsv(path);
+    EXPECT_DOUBLE_EQ(series.bars[0].volume, 0.0);
+    EXPECT_DOUBLE_EQ(series.bars[0].close, 1.5);
+}
+
+TEST_F(LoaderTest, ABadVolumeValueIsAnError)
+{
+    std::string path = writeCsv(
+        "timestamp,open,high,low,close,volume\n"
+        "1000,1.0,2.0,0.5,1.5,lots\n");
+
+    EXPECT_THROW(loadCsv(path), std::exception);
+}
+
+TEST_F(LoaderTest, ARowTooShortToHoldTheVolumeIsAnError)
+{
+    std::string path = writeCsv(
+        "timestamp,open,high,low,close,volume\n"
+        "1000,1.0,2.0,0.5,1.5\n");
+
+    EXPECT_THROW(loadCsv(path), std::runtime_error);
+}
+
+TEST_F(LoaderTest, SpacesAroundTheVolumeHeaderAreIgnored)
+{
+    std::string path = writeCsv(
+        "timestamp,open,high,low,close, volume \n"
+        "1000,1.0,2.0,0.5,1.5,12\n");
+
+    EXPECT_DOUBLE_EQ(loadCsv(path).bars[0].volume, 12.0);
+}
+
 TEST_F(LoaderTest, SortsUnorderedRowsByTimestamp)
 {
     std::string path = writeCsv(

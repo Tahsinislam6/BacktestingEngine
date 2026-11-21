@@ -340,6 +340,31 @@ TEST(NnfxExitIndicatorTest, AShortIsClosedByABullishState)
     EXPECT_EQ(r.closedTrades[0].reason, ExitReason::Indicator);
 }
 
+// The random-direction control: its trade may point against the signal, so the exit indicator must be read against the
+// SIGNAL's direction (the state that let the entry in), or a random trade against the C1 would be closed on the next bar.
+TEST(NnfxExitIndicatorTest, ARandomTradeIsClosedWhenTheStateTurnsAgainstTheSignalNotTheTrade)
+{
+    const Bar dip = ohlc(101.5, 101.6, 100.2, 100.3);              // state -1: against the long signal
+    bool sawShort = false, sawLong = false;
+    for (std::uint64_t seed = 1; seed <= 12; ++seed)
+    {
+        NnfxOptions o = base();
+        o.components.exitIndicator = byClose(100.4);               // +1 at 100.5 and 101.5, -1 at 100.3
+        o.randomSeed = seed;
+
+        const BacktestResult stay = run({below, crossUp, above2}, o);
+        ASSERT_EQ(stay.openTrades.size(), 2u) << "seed " << seed;  // the state still agrees with the signal
+        (stay.openTrades[0].direction == Direction::Short ? sawShort : sawLong) = true;
+
+        const BacktestResult gone = run({below, crossUp, above2, dip}, o);
+        ASSERT_EQ(gone.closedTrades.size(), 2u) << "seed " << seed;
+        for (const ClosedTrade& c : gone.closedTrades)
+            EXPECT_EQ(c.reason, ExitReason::Indicator);
+    }
+    EXPECT_TRUE(sawShort);
+    EXPECT_TRUE(sawLong);
+}
+
 TEST(NnfxExitIndicatorTest, WithoutTradesItDoesNothing)
 {
     NnfxOptions o = base();

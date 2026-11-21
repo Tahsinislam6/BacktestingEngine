@@ -173,3 +173,37 @@ TEST(NnfxEntryOrdersTest, ALongStopThatWouldBeBelowZeroIsRejected)
     EXPECT_THROW(nnfxEntryOrders(Direction::Long, 2, 2, 100000, 0, rules()), std::invalid_argument);
     EXPECT_NO_THROW(nnfxEntryOrders(Direction::Short, 2, 2, 100000, 0, rules()));
 }
+
+// ---------- no scaling out: one trade with the whole risk ----------
+
+TEST(NnfxEntryOrdersTest, ScalingOutIsOnByDefault)
+{
+    EXPECT_TRUE(NnfxEntryRules{}.scaleOut);
+}
+
+TEST(NnfxEntryOrdersTest, WithoutScalingOutThereIsOneOrderWithBothHalvesOfTheRiskAndNoTarget)
+{
+    NnfxEntryRules r = rules();
+    r.scaleOut = false;
+    const std::vector<Order> o = nnfxEntryOrders(Direction::Long, 100, 2, 100000, 0, r);
+
+    ASSERT_EQ(o.size(), 1u);
+    EXPECT_EQ(o[0].type, OrderType::Open);
+    EXPECT_EQ(o[0].direction, Direction::Long);
+    ASSERT_TRUE(o[0].stopLoss);
+    EXPECT_DOUBLE_EQ(*o[0].stopLoss, 97.0);
+    EXPECT_FALSE(o[0].takeProfit.has_value());
+    EXPECT_NEAR(o[0].quantity, 2.0 * 1000.0 / 3.0, 1e-9);      // 2% of 100000 over the stop distance 3
+}
+
+TEST(NnfxEntryOrdersTest, WithoutScalingOutAShortIsTheMirrorImage)
+{
+    NnfxEntryRules r = rules();
+    r.scaleOut = false;
+    const std::vector<Order> o = nnfxEntryOrders(Direction::Short, 100, 2, 100000, 0, r);
+
+    ASSERT_EQ(o.size(), 1u);
+    EXPECT_EQ(o[0].direction, Direction::Short);
+    EXPECT_DOUBLE_EQ(*o[0].stopLoss, 103.0);
+    EXPECT_FALSE(o[0].takeProfit.has_value());
+}

@@ -105,9 +105,11 @@ node_modules/
 
 # ---- Other ----
 *.csv
+.claude
 
 # ---- Baselines: every header in include/baselines/ stays local ----
 include/baselines/*
 
 # ---- Components: every header in include/components/ stays local ----
 include/components/*
+

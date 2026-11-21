@@ -109,3 +109,76 @@ TEST(NnfxSetupTest, AComponentOfTheWrongKindIsRejected)
     stateAsFilter.filter = "rsi";
     EXPECT_THROW(makeNnfxOptions(stateAsFilter), std::invalid_argument);
 }
+
+TEST(NnfxSetupTest, ScalingOutIsOnUnlessSwitchedOff)
+{
+    EXPECT_TRUE(makeNnfxOptions(cli()).entry.scaleOut);
+
+    CliOptions c = cli();
+    c.noScaling = true;
+    const NnfxOptions o = makeNnfxOptions(c);
+    EXPECT_FALSE(o.entry.scaleOut);
+    EXPECT_FALSE(o.breakeven);                    // there is no target to arm it
+    ASSERT_TRUE(o.trailAtr.has_value());
+}
+
+TEST(NnfxSetupTest, TrailAfterMeansOneTradeNoBreakevenAndAStartThreshold)
+{
+    EXPECT_FALSE(makeNnfxOptions(cli()).trailAfterAtr.has_value());
+
+    CliOptions c = cli();
+    c.trailAfter = 2.0;
+    const NnfxOptions o = makeNnfxOptions(c);
+    ASSERT_TRUE(o.trailAfterAtr.has_value());
+    EXPECT_DOUBLE_EQ(*o.trailAfterAtr, 2.0);
+    EXPECT_FALSE(o.entry.scaleOut);
+    EXPECT_FALSE(o.breakeven);
+    ASSERT_TRUE(o.trailAtr.has_value());
+    EXPECT_DOUBLE_EQ(*o.trailAtr, 1.5);
+}
+
+TEST(NnfxSetupTest, TheStopAtrPeriodRiskAndTrailFollowTheCommandLine)
+{
+    const NnfxOptions plain = makeNnfxOptions(cli());
+    EXPECT_DOUBLE_EQ(plain.entry.stopAtr, 1.5);
+    EXPECT_EQ(plain.atrPeriod, 14);
+    EXPECT_DOUBLE_EQ(plain.entry.riskPerHalf, 0.01);
+    EXPECT_TRUE(plain.trailAtr.has_value());
+
+    CliOptions c = cli();
+    c.stopAtr = 2.5;
+    c.atrPeriod = 20;
+    c.risk = 0.0025;
+    c.noTrail = true;
+    const NnfxOptions o = makeNnfxOptions(c);
+    EXPECT_DOUBLE_EQ(o.entry.stopAtr, 2.5);
+    EXPECT_EQ(o.atrPeriod, 20);
+    EXPECT_DOUBLE_EQ(o.entry.riskPerHalf, 0.00125);          // the risk of the whole signal, split in two halves
+    EXPECT_FALSE(o.trailAtr.has_value());
+    EXPECT_FALSE(o.breakeven);
+}
+
+TEST(NnfxSetupTest, TheChaseLimitCanBeChangedOrRemoved)
+{
+    EXPECT_EQ(makeNnfxOptions(cli()).maxDistanceAtr, std::optional<double>(1.0));      // the default
+
+    CliOptions wide = cli();
+    wide.maxDistance = 4.0;
+    EXPECT_EQ(makeNnfxOptions(wide).maxDistanceAtr, std::optional<double>(4.0));
+
+    CliOptions off = cli();
+    off.noChaseLimit = true;
+    EXPECT_FALSE(makeNnfxOptions(off).maxDistanceAtr.has_value());
+}
+
+TEST(NnfxSetupTest, TheRiskIsTheWholeTradesWithNoScaling)
+{
+    CliOptions c = cli();
+    c.risk = 0.0025;
+    c.noScaling = true;
+    const NnfxOptions o = makeNnfxOptions(c);
+    const std::vector<Order> orders = nnfxEntryOrders(Direction::Long, 100, 2, 100000, 0, o.entry);
+
+    ASSERT_EQ(orders.size(), 1u);
+    EXPECT_NEAR(orders[0].quantity * (o.entry.stopAtr * 2.0), 0.0025 * 100000, 1e-9);     // loses 0.25% if the stop is hit
+}

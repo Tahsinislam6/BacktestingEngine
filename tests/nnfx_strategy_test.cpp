@@ -505,13 +505,39 @@ std::vector<Bar> manyCrosses()
 }
 }
 
-TEST(NnfxRandomTest, RejectsTheCrossBackExit)
+TEST(NnfxRandomTest, WithTheCrossBackExitATradeClosesAtTheNextCrossWhicheverWayItWent)
+{
+    // bar 1 crosses up and opens a pair in a random direction; bar 2 crosses down (close 99.5), inside both stops (96 and 105).
+    // Whichever way the pair went, it is closed at that close by the cross, and a new random pair is entered there.
+    bool sawLong = false, sawShort = false;
+    for (std::uint64_t seed = 1; seed <= 30; ++seed)
+    {
+        NnfxOptions o = options();
+        o.randomSeed = seed;                          // exitOnCross stays on
+        const BacktestResult r = run({below, crossUp, ohlc(100.5, 100.8, 99, 99.5)}, o);
+
+        ASSERT_EQ(r.closedTrades.size(), 2u) << seed;
+        for (const ClosedTrade& c : r.closedTrades)
+        {
+            EXPECT_EQ(c.reason, ExitReason::Signal) << seed;
+            EXPECT_DOUBLE_EQ(c.exitPrice, 99.5) << seed;
+            EXPECT_EQ(c.trade.direction, r.closedTrades[0].trade.direction) << seed;
+        }
+        EXPECT_EQ(r.openTrades.size(), 2u) << seed;
+        (r.closedTrades[0].trade.direction == Direction::Long ? sawLong : sawShort) = true;
+    }
+    EXPECT_TRUE(sawLong);
+    EXPECT_TRUE(sawShort);
+}
+
+TEST(NnfxRandomTest, WithTheCrossBackExitATradeStaysWhileThereIsNoCross)
 {
     NnfxOptions o = options();
-    o.randomSeed = 1;
-    o.exitOnCross = true;
+    o.randomSeed = 4;
+    const BacktestResult r = run({below, crossUp, ohlc(100.5, 101, 100.2, 100.8)}, o);
 
-    EXPECT_THROW(NnfxStrategy<FixedLine>(1, FixedLine(100), o), std::invalid_argument);
+    EXPECT_TRUE(r.closedTrades.empty());
+    EXPECT_EQ(r.openTrades.size(), 2u);
 }
 
 TEST(NnfxRandomTest, TheSameSeedGivesTheSameTrades)
@@ -803,4 +829,260 @@ TEST(NnfxTrailingTest, RejectsANonPositiveTrail)
     EXPECT_THROW(NnfxStrategy<FixedLine>(1, FixedLine(100), o), std::invalid_argument);
     o.trailAtr = -1.0;
     EXPECT_THROW(NnfxStrategy<FixedLine>(1, FixedLine(100), o), std::invalid_argument);
+}
+
+// ---------- no scaling out ----------
+//
+// entry.scaleOut == false: each signal opens ONE trade with both halves' risk (2%), the same stop, no take-profit. There is
+// no target to hit, so the breakeven stop is not used (it would cancel the stop at once); the trailing stop starts on the
+// bar after entry instead of after the target, and, as always, never loosens the stop.
+
+namespace
+{
+NnfxOptions single(double trailAtrs = 1.5)
+{
+    NnfxOptions o = options();
+    o.entry.scaleOut = false;
+    o.trailAtr = trailAtrs;
+    return o;
+}
+}
+
+TEST(NnfxNoScalingTest, ACrossUpOpensOneLongWithTheWholeRiskAndNoTarget)
+{
+    const BacktestResult r = run({below, crossUp}, single());
+
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    const Trade& t = r.openTrades[0];
+    EXPECT_EQ(t.direction, Direction::Long);
+    EXPECT_DOUBLE_EQ(t.entryPrice, 100.5);
+    EXPECT_DOUBLE_EQ(*t.stopLoss, 96.0);
+    EXPECT_FALSE(t.takeProfit.has_value());
+    EXPECT_NEAR(t.quantity, 2.0 * kHalf, 1e-9);
+}
+
+TEST(NnfxNoScalingTest, ACrossDownOpensOneShort)
+{
+    // prev close 102, true range 5 on the cross bar: entry 99.5, stop 99.5 + 7.5 = 107
+    const BacktestResult r = run({ohlc(102, 103, 101, 102), ohlc(102, 102, 97, 99.5)}, single());
+
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_EQ(r.openTrades[0].direction, Direction::Short);
+    EXPECT_DOUBLE_EQ(*r.openTrades[0].stopLoss, 107.0);
+    EXPECT_NEAR(r.openTrades[0].quantity, 2.0 * 1000.0 / 7.5, 1e-9);
+}
+
+TEST(NnfxNoScalingTest, AStopLossStillLosesTwoPercent)
+{
+    const BacktestResult r = run({below, crossUp, ohlc(100.4, 101, 95, 100.2)}, single());
+
+    ASSERT_EQ(r.closedTrades.size(), 1u);
+    EXPECT_EQ(r.closedTrades[0].reason, ExitReason::StopLoss);
+    EXPECT_DOUBLE_EQ(r.closedTrades[0].exitPrice, 96.0);
+    EXPECT_NEAR(r.finalEquity, 100000.0 - 2000.0, 1e-6);
+}
+
+TEST(NnfxNoScalingTest, TheTrailStartsAtOnceAndIsNotBreakeven)
+{
+    // bar 2: close 100.7, true range 0.8, trail 1.5 * 0.8 = 1.2 below the best close: 99.5. Breakeven (the entry 100.5)
+    // would be a higher stop but is not used.
+    const BacktestResult r = run({below, crossUp, ohlc(100.5, 101, 100.2, 100.7)}, single());
+
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_NEAR(*r.openTrades[0].stopLoss, 99.5, 1e-9);
+    EXPECT_EQ(r.openTrades[0].stopReason, ExitReason::Trailing);
+}
+
+TEST(NnfxNoScalingTest, TheStopFollowsTheBestCloseAndFillsAtTheStopPrice)
+{
+    // closes 103 then 105: the stop is 105 - 0.5 * 3.5 = 103.25; the next bar trades down to 102 and fills at 103.25
+    const BacktestResult r = run({below, crossUp, ohlc(100.6, 104, 100.4, 103), ohlc(103, 106, 102.5, 105),
+                                  ohlc(105, 105, 102, 102.5)}, single(0.5));
+
+    ASSERT_EQ(r.closedTrades.size(), 1u);
+    EXPECT_EQ(r.closedTrades[0].reason, ExitReason::Trailing);
+    EXPECT_DOUBLE_EQ(r.closedTrades[0].exitPrice, 103.25);
+    EXPECT_TRUE(r.openTrades.empty());
+}
+
+TEST(NnfxNoScalingTest, TheStopNeverMovesBack)
+{
+    // after the 105 close the stop is 103.25; a wide bar (true range 5) would put the raw trail at 102.5: stays 103.25
+    const BacktestResult r = run({below, crossUp, ohlc(100.6, 104, 100.4, 103), ohlc(103, 106, 102.5, 105),
+                                  ohlc(105, 109, 104, 105)}, single(0.5));
+
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_NEAR(*r.openTrades[0].stopLoss, 103.25, 1e-9);
+}
+
+TEST(NnfxNoScalingTest, AShortTrailsAboveTheLowestClose)
+{
+    // short from 99.5; bar 2 closes 95 with true range 5.5: the stop is 95 + 0.5 * 5.5 = 97.75
+    const BacktestResult r = run({ohlc(102, 103, 101, 102), ohlc(102, 102, 97, 99.5), ohlc(99.4, 99.5, 94, 95)},
+                                 single(0.5));
+
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_NEAR(*r.openTrades[0].stopLoss, 97.75, 1e-9);
+    EXPECT_EQ(r.openTrades[0].stopReason, ExitReason::Trailing);
+}
+
+TEST(NnfxNoScalingTest, WithoutATrailTheStopStaysWhereItStarted)
+{
+    NnfxOptions o = single();
+    o.trailAtr = std::nullopt;
+    const BacktestResult r = run({below, crossUp, ohlc(100.6, 104, 100.4, 103), ohlc(103, 106, 102.5, 105)}, o);
+
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_DOUBLE_EQ(*r.openTrades[0].stopLoss, 96.0);
+}
+
+TEST(NnfxNoScalingTest, ANewSignalIsTakenOnceTheTradeIsGone)
+{
+    // stopped out, then the price crosses down and a short opens
+    NnfxOptions o = single();
+    o.exitOnCross = false;
+    const BacktestResult r = run({below, crossUp, ohlc(100.4, 101, 95, 99), ohlc(99, 99.2, 98.5, 98.8),
+                                  ohlc(98.8, 99.5, 97.5, 98)}, o);
+
+    // the long was stopped at 96 on bar 2; bar 2 closed at 99 (below the line), so that bar is the cross down
+    ASSERT_EQ(r.closedTrades.size(), 1u);
+    EXPECT_EQ(r.closedTrades[0].trade.direction, Direction::Long);
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_EQ(r.openTrades[0].direction, Direction::Short);
+}
+
+TEST(NnfxNoScalingTest, TheRandomDirectionControlAlsoOpensOneTradePerSignal)
+{
+    NnfxOptions o = randomOptions(5);
+    o.entry.scaleOut = false;
+    const BacktestResult r = run(manyCrosses(), o);
+
+    // two signals per cycle of manyCrosses, so the number of trades equals the number of signals (not twice)
+    EXPECT_EQ(r.closedTrades.size(), 240u);
+    for (const ClosedTrade& c : r.closedTrades)
+        EXPECT_FALSE(c.trade.takeProfit.has_value());
+}
+
+// ---------- trail only after a profit (trailAfterAtr) ----------
+//
+// The trader's rule: one trade, the initial stop stays where it is until a CLOSE is trailAfterAtr x the ATR AT ENTRY in profit;
+// from then on the stop trails trailAtr x the ATR AT ENTRY behind the best close (it never loosens). No breakeven stop.
+// Entry 100.5 with ATR 3: stop 96; with trailAfter 2 the trail starts at a close of 106.5 and sits 1.5 * 3 = 4.5 behind it.
+
+namespace
+{
+NnfxOptions trailAfter(double atrs = 2.0)
+{
+    NnfxOptions o = options();
+    o.entry.scaleOut = false;
+    o.breakeven = false;
+    o.trailAfterAtr = atrs;
+    return o;
+}
+}
+
+TEST(NnfxTrailAfterTest, TheStopStaysUntilACloseIsFarEnoughInProfit)
+{
+    // the high reaches 110 but the close (105) is short of 106.5: nothing moves, and there is no breakeven stop
+    const BacktestResult r = run({below, crossUp, ohlc(100.6, 110, 100.4, 105)}, trailAfter());
+
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_DOUBLE_EQ(*r.openTrades[0].stopLoss, 96.0);
+}
+
+TEST(NnfxTrailAfterTest, ACloseTwoAtrInProfitStartsTheTrailAtEntryAtrTimesTheTrailDistance)
+{
+    // close 107 >= 106.5: stop = 107 - 1.5 * 3 = 102.5
+    const BacktestResult r = run({below, crossUp, ohlc(100.6, 108, 100.4, 107)}, trailAfter());
+
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_NEAR(*r.openTrades[0].stopLoss, 102.5, 1e-9);
+    EXPECT_EQ(r.openTrades[0].stopReason, ExitReason::Trailing);
+}
+
+TEST(NnfxTrailAfterTest, ACloseExactlyAtTheThresholdCounts)
+{
+    const BacktestResult r = run({below, crossUp, ohlc(100.6, 107, 100.4, 106.5)}, trailAfter());
+
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_NEAR(*r.openTrades[0].stopLoss, 102.0, 1e-9);
+}
+
+TEST(NnfxTrailAfterTest, TheTrailUsesTheAtrAtEntryNotTheCurrentOne)
+{
+    // the next bar has true range 5.2 (the current ATR) but the stop is 111 - 4.5 = 106.5, not 111 - 1.5 * 5.2 = 103.2
+    const BacktestResult r = run({below, crossUp, ohlc(100.6, 108, 100.4, 107), ohlc(107, 112, 106.8, 111)}, trailAfter());
+
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_NEAR(*r.openTrades[0].stopLoss, 106.5, 1e-9);
+}
+
+TEST(NnfxTrailAfterTest, TheStopFillsAtItsPrice)
+{
+    const BacktestResult r = run({below, crossUp, ohlc(100.6, 108, 100.4, 107), ohlc(107, 107.2, 102, 102.4)}, trailAfter());
+
+    ASSERT_EQ(r.closedTrades.size(), 1u);
+    EXPECT_EQ(r.closedTrades[0].reason, ExitReason::Trailing);
+    EXPECT_DOUBLE_EQ(r.closedTrades[0].exitPrice, 102.5);
+    EXPECT_TRUE(r.openTrades.empty());
+}
+
+TEST(NnfxTrailAfterTest, TheStopNeverMovesBackAndTheTrailStaysOnOnceStarted)
+{
+    // best close 111 gives 106.5; a lower close (110) keeps the stop at 106.5 (the trail stays on even though 110 < 111)
+    const BacktestResult r = run({below, crossUp, ohlc(100.6, 108, 100.4, 107), ohlc(107, 112, 106.8, 111),
+                                  ohlc(111, 111.5, 108, 110)}, trailAfter());
+
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_NEAR(*r.openTrades[0].stopLoss, 106.5, 1e-9);
+}
+
+TEST(NnfxTrailAfterTest, AShortMirrorsTheLong)
+{
+    // short from 99.5 with ATR 5 (stop 107): the trail starts at a close <= 99.5 - 10 = 89.5; close 89: stop = 89 + 7.5 = 96.5
+    const BacktestResult r = run({ohlc(102, 103, 101, 102), ohlc(102, 102, 97, 99.5), ohlc(99.4, 99.5, 88, 89)}, trailAfter());
+
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_NEAR(*r.openTrades[0].stopLoss, 96.5, 1e-9);
+    EXPECT_EQ(r.openTrades[0].stopReason, ExitReason::Trailing);
+}
+
+TEST(NnfxTrailAfterTest, AShortThatHasNotMovedFarEnoughKeepsItsStop)
+{
+    const BacktestResult r = run({ohlc(102, 103, 101, 102), ohlc(102, 102, 97, 99.5), ohlc(99.4, 99.5, 88, 90)}, trailAfter());
+
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_DOUBLE_EQ(*r.openTrades[0].stopLoss, 107.0);
+}
+
+TEST(NnfxTrailAfterTest, EachTradeUsesItsOwnEntryAtr)
+{
+    // first trade: ATR 3, stopped out at 96. Second signal (cross up again) with a different ATR must use its own.
+    NnfxOptions o = trailAfter();
+    o.exitOnCross = false;
+    // bar 2 stops the long (low 95) and closes at 99: cross down opens a short with ATR 6 (stop 99 + 9 = 108, trail starts at <= 87)
+    const BacktestResult r = run({below, crossUp, ohlc(100.4, 101, 95, 99), ohlc(99, 99.5, 85, 86)}, o);
+
+    ASSERT_EQ(r.openTrades.size(), 1u);
+    EXPECT_EQ(r.openTrades[0].direction, Direction::Short);
+    EXPECT_NEAR(*r.openTrades[0].stopLoss, 86 + 1.5 * 6, 1e-9);
+}
+
+TEST(NnfxTrailAfterTest, NeedsASingleTradeAndATrailAndAPositiveThreshold)
+{
+    NnfxOptions scaled = options();
+    scaled.trailAfterAtr = 2.0;
+    EXPECT_THROW(NnfxStrategy<FixedLine>(1, FixedLine(100), scaled), std::invalid_argument);
+
+    NnfxOptions noTrail = trailAfter();
+    noTrail.trailAtr = std::nullopt;
+    EXPECT_THROW(NnfxStrategy<FixedLine>(1, FixedLine(100), noTrail), std::invalid_argument);
+
+    EXPECT_THROW(NnfxStrategy<FixedLine>(1, FixedLine(100), trailAfter(0.0)), std::invalid_argument);
+    EXPECT_THROW(NnfxStrategy<FixedLine>(1, FixedLine(100), trailAfter(-1.0)), std::invalid_argument);
+}
+
+TEST(NnfxTrailAfterTest, IsOffByDefault)
+{
+    EXPECT_FALSE(NnfxOptions{}.trailAfterAtr.has_value());
 }

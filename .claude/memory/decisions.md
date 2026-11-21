@@ -44,3 +44,11 @@
 - 2026-11-17: the user approved plan B with M = 364 and --prior-tries 0; it was run once (61 s): 0 finalists. The open question about counting is closed.
 - 2026-11-17: the user asked to test the lwpi lead on the holdout. I pre-registered plan C (grid rule M = 28 plus a three-part replication rule) and ran it once on
   2006-2015: it did not replicate. The rule was written by me without a separate approval step, on the user's request to test it.
+- 2026-11-17: VOLUME added at the user's request ("let's add volume"). Engine: Bar::volume (loader by header name, Sunday merge sums,
+  aligned data carries it). Four GATE components ported from the MT4 Volume folder, each with its own tests: normalized_volume (real
+  volume vs its average, level 100), volatility_ratio (SD ratio > 1), ttms (allows when NOT in the Bollinger-in-Keltner squeeze), adx_strength
+  (ADX line > level; the level 25 is a convention, not in the file). Not ported: Silence (time-dependent static state), Stiffness (large),
+  TDF, Vix-Fix (not a gate); Choppiness/WAE/Chaikin volatility exist only as .ex4. There is no grid dimension for filters yet.
+- 2026-11-17: the user asked why the phase-one baselines and C1s were not tested with the filters and said go ahead: the grid got a filter dimension and plan D
+  was drafted (not yet approved/run). My earlier idea of testing filters on one neutral system with random gates was dropped in favour of this.
+- 2026-11-17: the user approved plan D with --prior-tries 364; it was run once (4 min 13 s): 0 finalists.

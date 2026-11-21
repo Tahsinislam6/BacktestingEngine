@@ -1,0 +1,24 @@
+# Phase one, plan G: the 55-day breakout (turtle_channel) x the 13 C1s, run under many exit/entry strategies
+# STATUS: requested by the user 2026-11-18 ("use 55 day breakout as baseline and test only that with various strategies"). FROZEN once run.
+# baseline 1: turtle_channel trade=55,stop=55 = a pure 55-day breakout: the close above the highest high of the previous 55 bars
+#   (long) or below their lowest low (short); the line is the opposite 55-bar extreme, so the next cross is the opposite breakout.
+# baseline 2: turtle_channel trade=55,stop=20 = classic Turtle System 2 (55-day entry, 20-day exit level). Its line is the 20-bar
+#   extreme, so a dip through it also counts as a cross; it is not a pure breakout, reported separately.
+# Every config runs with --no-chase-limit: the line is far from the close right after a breakout, the usual 1 ATR limit would skip
+#   most real breakouts.
+# 2 baselines x 13 C1s = 26 pairs per config.
+baseline turtle_channel trade=55,stop=55
+baseline turtle_channel trade=55,stop=20
+c1 rsi
+c1 aroon
+c1 bears_bulls_impulse
+c1 adx_di
+c1 cmo
+c1 disparity_index
+c1 pmo
+c1 tii
+c1 andean_oscillator
+c1 hlc_trend
+c1 laguerre
+c1 lwpi
+c1 ttf

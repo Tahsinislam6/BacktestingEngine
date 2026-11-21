@@ -214,3 +214,23 @@ TEST_F(DatasetTest, ABadFileIsReportedNotSkipped)
 
     EXPECT_THROW(loadFolder(dir()), std::runtime_error);
 }
+
+TEST_F(DatasetTest, TheVolumeOfEveryBarReachesTheSnapshots)
+{
+    writeText("EURUSD_1d_x.csv",
+              "timestamp,open,high,low,close,volume\n" +
+              std::to_string(day(0)) + ",1.0,1.1,0.9,1.05,1500.5\n" +
+              std::to_string(day(1)) + ",1.05,1.2,1.0,1.1,2500.25\n");
+    writeText("GBPUSD_1d_x.csv",
+              "timestamp,open,high,low,close,volume\n" +
+              std::to_string(day(0)) + ",1.3,1.4,1.2,1.35,10\n" +
+              std::to_string(day(1)) + ",1.35,1.5,1.3,1.4,20\n");
+
+    const AlignedData d = loadFolder(dir());
+
+    ASSERT_EQ(d.snapshots.size(), 2u);
+    EXPECT_DOUBLE_EQ(d.snapshots[0].bars[0]->volume, 1500.5);
+    EXPECT_DOUBLE_EQ(d.snapshots[1].bars[0]->volume, 2500.25);
+    EXPECT_DOUBLE_EQ(d.snapshots[0].bars[1]->volume, 10.0);
+    EXPECT_DOUBLE_EQ(d.snapshots[1].bars[1]->volume, 20.0);
+}

@@ -15,6 +15,8 @@ struct Bar
     double high{};
     double low{};
     double close{};
+    double volume{};       // as in the data file's "volume" column (0 when the file has none); an FX feed's tick/size volume,
+                           // only meaningful relative to its own recent average
 };
 
 struct BarSeries
