@@ -87,6 +87,37 @@ std::int64_t parseTimestamp(std::string_view text)
          + hour * 3600 + minute * 60 + second;
 }
 
+std::int64_t parseCompactDate(std::string_view text)
+{
+    int year, month, day;
+    if (text.size() != 8 || !readDigits(text, 0, 4, year) || !readDigits(text, 4, 2, month) || !readDigits(text, 6, 2, day))
+        bad(text);
+    if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month))
+        bad(text);
+
+    return daysFromCivil(year, static_cast<unsigned>(month), static_cast<unsigned>(day)) * 86400;
+}
+
+std::int64_t parseTimeOfDay(std::string_view text)
+{
+    int hour = 0, minute = 0, second = 0;
+    bool ok = false;
+
+    if (text.size() == 6)                                   // HHMMSS
+        ok = readDigits(text, 0, 2, hour) && readDigits(text, 2, 2, minute) && readDigits(text, 4, 2, second);
+    else if (text.size() == 4)                              // HHMM
+        ok = readDigits(text, 0, 2, hour) && readDigits(text, 2, 2, minute);
+    else if (text.size() == 5 && text[2] == ':')            // HH:MM
+        ok = readDigits(text, 0, 2, hour) && readDigits(text, 3, 2, minute);
+    else if (text.size() == 8 && text[2] == ':' && text[5] == ':')   // HH:MM:SS
+        ok = readDigits(text, 0, 2, hour) && readDigits(text, 3, 2, minute) && readDigits(text, 6, 2, second);
+
+    if (!ok || hour > 23 || minute > 59 || second > 59)
+        bad(text);
+
+    return hour * 3600 + minute * 60 + second;
+}
+
 std::int64_t tradingDay(std::int64_t timestamp, std::int64_t sessionOffsetSeconds)
 {
     const std::int64_t shifted = timestamp + sessionOffsetSeconds;

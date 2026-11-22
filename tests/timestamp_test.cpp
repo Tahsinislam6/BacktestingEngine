@@ -163,3 +163,81 @@ TEST(TradingDayTest, OffsetShiftsTheDayBoundary)
     EXPECT_EQ(tradingDay(86400 - 1, 1), 1);   // one second of offset tips it over midnight
     EXPECT_EQ(tradingDay(86400 - 2, 1), 0);
 }
+
+// ---------- parseCompactDate: YYYYMMDD (seconds since 1970 UTC, midnight) ----------
+
+TEST(ParseCompactDateTest, ReadsAnEightDigitDateAsMidnightUtc)
+{
+    EXPECT_EQ(parseCompactDate("20100717"), 1279324800);
+    EXPECT_EQ(parseCompactDate("20250101"), 1735689600);
+    EXPECT_EQ(parseCompactDate("19700101"), 0);
+}
+
+TEST(ParseCompactDateTest, KnowsLeapDays)
+{
+    EXPECT_EQ(parseCompactDate("20240229"), 1709164800);
+    EXPECT_THROW(parseCompactDate("20230229"), std::invalid_argument);
+    EXPECT_THROW(parseCompactDate("19000229"), std::invalid_argument);
+    EXPECT_NO_THROW(parseCompactDate("20000229"));
+}
+
+TEST(ParseCompactDateTest, RejectsImpossibleDates)
+{
+    EXPECT_THROW(parseCompactDate("20101301"), std::invalid_argument);
+    EXPECT_THROW(parseCompactDate("20100001"), std::invalid_argument);
+    EXPECT_THROW(parseCompactDate("20100732"), std::invalid_argument);
+    EXPECT_THROW(parseCompactDate("20100700"), std::invalid_argument);
+    EXPECT_THROW(parseCompactDate("20100431"), std::invalid_argument);
+}
+
+TEST(ParseCompactDateTest, RejectsAnythingThatIsNotExactlyEightDigits)
+{
+    EXPECT_THROW(parseCompactDate(""), std::invalid_argument);
+    EXPECT_THROW(parseCompactDate("2010717"), std::invalid_argument);
+    EXPECT_THROW(parseCompactDate("201007170"), std::invalid_argument);
+    EXPECT_THROW(parseCompactDate("2010-07-17"), std::invalid_argument);
+    EXPECT_THROW(parseCompactDate("2010071a"), std::invalid_argument);
+    EXPECT_THROW(parseCompactDate("-0100717"), std::invalid_argument);
+}
+
+// ---------- parseTimeOfDay: seconds since midnight ----------
+
+TEST(ParseTimeOfDayTest, ReadsSixDigitHhmmss)
+{
+    EXPECT_EQ(parseTimeOfDay("000000"), 0);
+    EXPECT_EQ(parseTimeOfDay("093000"), 9 * 3600 + 30 * 60);
+    EXPECT_EQ(parseTimeOfDay("235959"), 86399);
+    EXPECT_EQ(parseTimeOfDay("134515"), 13 * 3600 + 45 * 60 + 15);
+}
+
+TEST(ParseTimeOfDayTest, ReadsFourDigitHhmm)
+{
+    EXPECT_EQ(parseTimeOfDay("0930"), 9 * 3600 + 30 * 60);
+    EXPECT_EQ(parseTimeOfDay("2359"), 23 * 3600 + 59 * 60);
+}
+
+TEST(ParseTimeOfDayTest, ReadsColonSeparatedTimes)
+{
+    EXPECT_EQ(parseTimeOfDay("09:30"), 9 * 3600 + 30 * 60);
+    EXPECT_EQ(parseTimeOfDay("13:45:15"), 13 * 3600 + 45 * 60 + 15);
+    EXPECT_EQ(parseTimeOfDay("00:00:00"), 0);
+}
+
+TEST(ParseTimeOfDayTest, RejectsImpossibleOrMalformedTimes)
+{
+    EXPECT_THROW(parseTimeOfDay(""), std::invalid_argument);
+    EXPECT_THROW(parseTimeOfDay("240000"), std::invalid_argument);
+    EXPECT_THROW(parseTimeOfDay("006000"), std::invalid_argument);
+    EXPECT_THROW(parseTimeOfDay("000060"), std::invalid_argument);
+    EXPECT_THROW(parseTimeOfDay("2500"), std::invalid_argument);
+    EXPECT_THROW(parseTimeOfDay("12345"), std::invalid_argument);
+    EXPECT_THROW(parseTimeOfDay("1234567"), std::invalid_argument);
+    EXPECT_THROW(parseTimeOfDay("9:30"), std::invalid_argument);
+    EXPECT_THROW(parseTimeOfDay("09:30:"), std::invalid_argument);
+    EXPECT_THROW(parseTimeOfDay("09-30"), std::invalid_argument);
+    EXPECT_THROW(parseTimeOfDay("12-34-56"), std::invalid_argument);
+    EXPECT_THROW(parseTimeOfDay("12:34-56"), std::invalid_argument);
+    EXPECT_THROW(parseTimeOfDay("12345678"), std::invalid_argument);
+    EXPECT_THROW(parseTimeOfDay("09:3a"), std::invalid_argument);
+    EXPECT_THROW(parseTimeOfDay("-10000"), std::invalid_argument);
+}

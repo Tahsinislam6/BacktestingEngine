@@ -11,6 +11,14 @@
 // Throws std::invalid_argument for anything else, including impossible dates.
 std::int64_t parseTimestamp(std::string_view text);
 
+// Seconds since 1970-01-01 00:00:00 UTC for a date written as exactly eight digits, YYYYMMDD (20100717), read as midnight UTC.
+// Throws std::invalid_argument for anything else, including impossible dates.
+std::int64_t parseCompactDate(std::string_view text);
+
+// Seconds since midnight for a time of day written HHMMSS (093000), HHMM (0930), HH:MM (09:30) or HH:MM:SS (09:30:15).
+// Hours always have two digits. Throws std::invalid_argument for anything else, including 24:00:00 and 12:60.
+std::int64_t parseTimeOfDay(std::string_view text);
+
 // ---- Preparation for aligning several series (multi-currency) ----
 //
 // Two series can describe the same trading day with different timestamps, for
