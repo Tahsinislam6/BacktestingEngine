@@ -53,7 +53,7 @@ Metrics computeMetrics(const BacktestResult& result, double startingCash, double
             m.sortino = mean / donwside * std::sqrt(periodsPerYear);
 
         if (m.maxDrawdown > 0.0)
-            m.calmar = m.cagr / m.maxDrawdown;
+            m.mar = m.cagr / m.maxDrawdown;
             
 
 

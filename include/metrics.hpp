@@ -10,7 +10,7 @@ struct Metrics
     double maxDrawdown{};      
     double sharpe{};           
     double sortino{};          
-    double calmar{};           
+    double mar{};             
 
     // from the closed trades (open trades are ignored) 
     int    trades{};

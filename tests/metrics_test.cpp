@@ -207,17 +207,17 @@ TEST(MetricsSortinoTest, EmptyCurveIsZero)
     EXPECT_DOUBLE_EQ(computeMetrics(curve({}), 100).sortino, 0.0);
 }
 
-// ---------- Calmar ----------
+// ---------- MAR ----------
 
-TEST(MetricsCalmarTest, CagrDividedByMaxDrawdown)
+TEST(MetricsMarTest, CagrDividedByMaxDrawdown)
 {
     // {90, 121}, 1 bar per year: 2 years, 1.21x => cagr 0.10; drawdown 10/100 = 0.10
-    EXPECT_NEAR(computeMetrics(curve({90, 121}), 100, 1).calmar, 1.0, 1e-9);
+    EXPECT_NEAR(computeMetrics(curve({90, 121}), 100, 1).mar, 1.0, 1e-9);
 }
 
-TEST(MetricsCalmarTest, ZeroWhenThereIsNoDrawdown)
+TEST(MetricsMarTest, ZeroWhenThereIsNoDrawdown)
 {
-    EXPECT_DOUBLE_EQ(computeMetrics(curve({110, 121}), 100, 1).calmar, 0.0);
+    EXPECT_DOUBLE_EQ(computeMetrics(curve({110, 121}), 100, 1).mar, 0.0);
 }
 
 // ---------- trade metrics ----------

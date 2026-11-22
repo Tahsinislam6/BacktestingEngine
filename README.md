@@ -15,7 +15,7 @@ Program: `./build/backtester <folder with .csv files>` loads the files, lines th
 | Orders, trades, portfolio | `order.hpp`, `trade.hpp`, `portfolio.*` |
 | Strategy interface and runners | `strategy.hpp`, `backtester.*` (one asset), `multi_backtester.*` (many assets, spreads, swap) |
 | Swap (overnight interest) | `swap.*` |
-| Metrics | `metrics.*`: total return, CAGR, max drawdown, Sharpe, Sortino, Calmar, win rate, profit factor, expectancy |
+| Metrics | `metrics.*`: total return, CAGR, max drawdown, Sharpe, Sortino, MAR (CAGR / max drawdown), win rate, profit factor, expectancy |
 | Indicators | `indicators/core.hpp`, `indicators/atr.hpp` |
 
 Every part has its tests in `tests/`.
