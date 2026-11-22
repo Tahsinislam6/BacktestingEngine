@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <vector>
 
 #include "metrics.hpp"
@@ -206,17 +207,17 @@ TEST(MetricsSortinoTest, EmptyCurveIsZero)
     EXPECT_DOUBLE_EQ(computeMetrics(curve({}), 100).sortino, 0.0);
 }
 
-// ---------- Calmar ----------
+// ---------- MAR ----------
 
-TEST(MetricsCalmarTest, CagrDividedByMaxDrawdown)
+TEST(MetricsMarTest, CagrDividedByMaxDrawdown)
 {
     // {90, 121}, 1 bar per year: 2 years, 1.21x => cagr 0.10; drawdown 10/100 = 0.10
-    EXPECT_NEAR(computeMetrics(curve({90, 121}), 100, 1).calmar, 1.0, 1e-9);
+    EXPECT_NEAR(computeMetrics(curve({90, 121}), 100, 1).mar, 1.0, 1e-9);
 }
 
-TEST(MetricsCalmarTest, ZeroWhenThereIsNoDrawdown)
+TEST(MetricsMarTest, ZeroWhenThereIsNoDrawdown)
 {
-    EXPECT_DOUBLE_EQ(computeMetrics(curve({110, 121}), 100, 1).calmar, 0.0);
+    EXPECT_DOUBLE_EQ(computeMetrics(curve({110, 121}), 100, 1).mar, 0.0);
 }
 
 // ---------- trade metrics ----------
@@ -281,6 +282,93 @@ TEST(MetricsTradesTest, ExpectancyIsTheAveragePnl)
 {
     // (100 - 50 + 50 - 25) / 4
     EXPECT_DOUBLE_EQ(computeMetrics(withTrades({100, -50, 50, -25}), 100).expectancy, 18.75);
+}
+
+// ---------- expectancy in R ----------
+// R = pnl / initial risk, where the initial risk = |entry - initialStop| x quantity. A trade that lost exactly its stop is -1R.
+
+namespace
+{
+ClosedTrade rTrade(double entry, std::optional<double> stop, double quantity, double pnl, Direction d = Direction::Long)
+{
+    ClosedTrade t;
+    t.trade.direction = d;
+    t.trade.entryPrice = entry;
+    t.trade.initialStop = stop;
+    t.trade.quantity = quantity;
+    t.pnl = pnl;
+    return t;
+}
+
+BacktestResult withClosed(std::vector<ClosedTrade> closed)
+{
+    BacktestResult r;
+    r.closedTrades = std::move(closed);
+    return r;
+}
+}
+
+TEST(MetricsExpectancyRTest, ALongThatMadeTwiceItsRiskIsTwoR)
+{
+    // risk = |100 - 98| x 10 = 20; pnl 40
+    const Metrics m = computeMetrics(withClosed({rTrade(100, 98, 10, 40)}), 10000);
+    EXPECT_DOUBLE_EQ(m.expectancyR, 2.0);
+    EXPECT_EQ(m.tradesWithRisk, 1);
+}
+
+TEST(MetricsExpectancyRTest, AShortThatHitItsStopIsMinusOneR)
+{
+    // risk = |100 - 103| x 5 = 15; pnl -15
+    const Metrics m = computeMetrics(withClosed({rTrade(100, 103, 5, -15, Direction::Short)}), 10000);
+    EXPECT_DOUBLE_EQ(m.expectancyR, -1.0);
+}
+
+TEST(MetricsExpectancyRTest, IsTheMeanOfEachTradesR)
+{
+    // +2R, -1R, +0.5R -> mean 0.5R (not the total pnl over the total risk)
+    const Metrics m = computeMetrics(withClosed({rTrade(100, 98, 10, 40),
+                                                 rTrade(50, 49, 100, -100),
+                                                 rTrade(20, 19, 4, 2)}), 10000);
+    EXPECT_DOUBLE_EQ(m.expectancyR, 0.5);
+    EXPECT_EQ(m.tradesWithRisk, 3);
+}
+
+TEST(MetricsExpectancyRTest, DoesNotChangeWhenAllSizesScale)
+{
+    const Metrics a = computeMetrics(withClosed({rTrade(100, 98, 10, 40), rTrade(100, 98, 10, -20)}), 10000);
+    const Metrics b = computeMetrics(withClosed({rTrade(100, 98, 1000, 4000), rTrade(100, 98, 1000, -2000)}), 10000);
+    EXPECT_DOUBLE_EQ(a.expectancyR, b.expectancyR);
+    EXPECT_NE(a.expectancy, b.expectancy);          // the money expectancy does change
+}
+
+TEST(MetricsExpectancyRTest, TradesWithoutAnInitialStopAreLeftOut)
+{
+    const Metrics m = computeMetrics(withClosed({rTrade(100, 98, 10, 40), rTrade(100, std::nullopt, 10, 1000)}), 10000);
+    EXPECT_DOUBLE_EQ(m.expectancyR, 2.0);           // the 1000 trade has no R
+    EXPECT_EQ(m.tradesWithRisk, 1);
+    EXPECT_EQ(m.trades, 2);                         // but it still counts as a trade
+}
+
+TEST(MetricsExpectancyRTest, ATradeWhoseStopEqualsItsEntryHasNoRisk)
+{
+    const Metrics m = computeMetrics(withClosed({rTrade(100, 100, 10, 5), rTrade(100, 98, 10, -20)}), 10000);
+    EXPECT_DOUBLE_EQ(m.expectancyR, -1.0);
+    EXPECT_EQ(m.tradesWithRisk, 1);
+}
+
+TEST(MetricsExpectancyRTest, ZeroWhenNoTradeHasARisk)
+{
+    EXPECT_DOUBLE_EQ(computeMetrics(withClosed({}), 10000).expectancyR, 0.0);
+    const Metrics m = computeMetrics(withClosed({rTrade(100, std::nullopt, 10, 40)}), 10000);
+    EXPECT_DOUBLE_EQ(m.expectancyR, 0.0);
+    EXPECT_EQ(m.tradesWithRisk, 0);
+}
+
+TEST(MetricsExpectancyRTest, UsesTheStoredPnlSoCostsAndSwapAreIn)
+{
+    // a price move worth +40 but costs of 5 leave a stored pnl of 35 -> 1.75R
+    const Metrics m = computeMetrics(withClosed({rTrade(100, 98, 10, 35)}), 10000);
+    EXPECT_DOUBLE_EQ(m.expectancyR, 1.75);
 }
 
 TEST(MetricsTradesTest, AverageHoldingTime)

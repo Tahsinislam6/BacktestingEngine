@@ -53,7 +53,7 @@ Metrics computeMetrics(const BacktestResult& result, double startingCash, double
             m.sortino = mean / donwside * std::sqrt(periodsPerYear);
 
         if (m.maxDrawdown > 0.0)
-            m.calmar = m.cagr / m.maxDrawdown;
+            m.mar = m.cagr / m.maxDrawdown;
             
 
 
@@ -69,12 +69,23 @@ Metrics computeMetrics(const BacktestResult& result, double startingCash, double
         double grossLoss{};
         double totalPnL{};
         double totalHeld{};
+        double totalR{};
         int wins = 0;
 
         for (const ClosedTrade& t : closed)
         {
             totalPnL += t.pnl;
             totalHeld += static_cast<double>(t.exitTime - t.trade.entryTime);
+
+            if (t.trade.initialStop)
+            {
+                const double risk = std::abs(t.trade.entryPrice - *t.trade.initialStop) * t.trade.quantity;
+                if (risk > 0.0)
+                {
+                    totalR += t.pnl / risk;
+                    ++m.tradesWithRisk;
+                }
+            }
 
             if (t.pnl > 0.0) 
             {
@@ -91,6 +102,8 @@ Metrics computeMetrics(const BacktestResult& result, double startingCash, double
         m.winRate = wins / count;
         m.expectancy = totalPnL / count;
         m.avgHoldingTime = totalHeld / count;
+        if (m.tradesWithRisk > 0)
+            m.expectancyR = totalR / m.tradesWithRisk;
 
         if (grossLoss > 0.0)
             m.profitFactor = grossProfit / grossLoss;

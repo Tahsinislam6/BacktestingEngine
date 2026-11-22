@@ -106,6 +106,7 @@ TEST(AlignTest, BarsAreStoredUnchanged)
     original.high = 1.4;
     original.low = 1.0;
     original.close = 1.3;
+    original.volume = 12345.5;
 
     AlignedData a = align({makeSeries("EURGBP", {original})});
 
@@ -116,6 +117,7 @@ TEST(AlignTest, BarsAreStoredUnchanged)
     EXPECT_DOUBLE_EQ(stored.high, 1.4);
     EXPECT_DOUBLE_EQ(stored.low, 1.0);
     EXPECT_DOUBLE_EQ(stored.close, 1.3);
+    EXPECT_DOUBLE_EQ(stored.volume, 12345.5);
 }
 
 // ---------- matching ----------
