@@ -76,6 +76,7 @@ DerivedData/
 *.gcov
 core
 core.*
+!include/indicators/core.hpp
 *.profraw
 *.profdata
 

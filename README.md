@@ -1,11 +1,25 @@
 # BacktestingEngine
 
-A small C++20 backtesting engine for daily data, restarted from its bare-bones core.
-The earlier NNFX testing platform (baselines, components, grid, random-direction control, plans, results and notes)
-is kept in git on the branch `archive-nnfx`.
+A small C++20 backtesting engine for daily data: the generic parts only (data loading, orders and trades, the runners,
+indicators and metrics). It contains no trading strategies; those live in a separate private project that uses this
+engine as a library.
 
 Build: `cmake -S . -B build && cmake --build build`. Tests: `./build/engine_tests`.
 Program: `./build/backtester <folder with .csv files>` loads the files, lines the assets up and says what it found.
+
+## Using it from another project
+The CMake target `engine` is the library; its headers are in `include/`. From another project's CMakeLists.txt:
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(engine GIT_REPOSITORY https://github.com/Tahsinislam6/BacktestingEngine.git GIT_TAG main)
+FetchContent_MakeAvailable(engine)
+target_link_libraries(my_program PRIVATE engine)
+```
+
+Use a commit hash instead of `main` to pin a version. To build against a local copy of the engine instead of GitHub,
+configure with `-DFETCHCONTENT_SOURCE_DIR_ENGINE=/path/to/BacktestingEngine`. The program and the tests are only
+built when the engine is the top-level project.
 
 ## What is here
 | Part | Files |
