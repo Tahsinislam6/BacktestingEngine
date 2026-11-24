@@ -92,3 +92,71 @@ SwapSchedule selectSwap(const SwapSchedule& swap, const std::vector<std::size_t>
     }
     return out;
 }
+
+SleeveResult runSleeves(const AlignedData& data, std::vector<Sleeve>& sleeves,
+                        const std::vector<double>& spreads, const SwapSchedule& swap)
+{
+    if (sleeves.empty())
+        throw std::invalid_argument("there are no sleeves");
+
+    // First check everything and work out each sleeve's asset positions, so that a mistake in any sleeve is found
+    // before the first strategy is called.
+    std::vector<std::vector<std::size_t>> picks;
+    std::vector<bool> taken(data.symbols.size(), false);   // taken[a]: an earlier sleeve already has asset a
+    for (std::size_t k = 0; k < sleeves.size(); ++k)
+    {
+        const Sleeve& sleeve = sleeves[k];
+
+        if (!sleeve.strategy)
+            throw std::invalid_argument("sleeve " + sleeve.name + " has no strategy");
+        if (!(sleeve.cash > 0.0))   // written this way so that NaN is refused too
+            throw std::invalid_argument("sleeve " + sleeve.name + " needs positive cash");
+        for (std::size_t j = 0; j < k; ++j)
+            if (sleeves[j].name == sleeve.name)
+                throw std::invalid_argument("two sleeves are named " + sleeve.name);
+
+        std::vector<std::size_t> indices = assetIndices(data, sleeve.symbols);   // throws for unknown / repeated / no symbols
+        for (std::size_t index : indices)
+        {
+            if (taken[index])
+                throw std::invalid_argument("asset " + data.symbols[index] + " is in two sleeves");
+            taken[index] = true;
+        }
+        picks.push_back(std::move(indices));
+    }
+
+    SleeveResult out;
+    out.combined.equityCurve.assign(data.snapshots.size(), 0.0);
+
+    for (std::size_t k = 0; k < sleeves.size(); ++k)
+    {
+        Sleeve& sleeve = sleeves[k];
+        const std::vector<std::size_t>& indices = picks[k];
+
+        BacktestResult result = runMultiBacktest(selectAssets(data, indices), *sleeve.strategy, sleeve.cash,
+                                                 selectSpreads(spreads, indices), selectSwap(swap, indices));
+
+        // Every run has one equity value per snapshot, so the curves line up and can simply be added.
+        for (std::size_t i = 0; i < result.equityCurve.size(); ++i)
+            out.combined.equityCurve[i] += result.equityCurve[i];
+        out.combined.finalEquity += result.finalEquity;
+
+        // Trades go into the combined lists with the asset's position in the full data and the sleeve's name.
+        for (ClosedTrade trade : result.closedTrades)
+        {
+            trade.trade.asset = static_cast<int>(indices[static_cast<std::size_t>(trade.trade.asset)]);
+            out.combined.closedTrades.push_back(trade);
+            out.closedTradeSleeve.push_back(sleeve.name);
+        }
+        for (Trade trade : result.openTrades)
+        {
+            trade.asset = static_cast<int>(indices[static_cast<std::size_t>(trade.asset)]);
+            out.combined.openTrades.push_back(trade);
+            out.openTradeSleeve.push_back(sleeve.name);
+        }
+
+        out.sleeves.push_back(SleeveRun{sleeve.name, sleeve.symbols, sleeve.cash, std::move(result)});
+    }
+
+    return out;
+}
