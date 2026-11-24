@@ -28,6 +28,7 @@ built when the engine is the top-level project.
 | Aligned multi-asset data | `aligned.*` |
 | Orders, trades, portfolio | `order.hpp`, `trade.hpp`, `portfolio.*` |
 | Strategy interface and runners | `strategy.hpp`, `backtester.*` (one asset), `multi_backtester.*` (many assets, spreads, swap) |
+| Sleeves (separate buckets of money) | `sleeve.*`: `runSleeves` gives each sleeve its own assets, strategy and cash, runs it alone and adds the results up; `computeSleeveMetrics` for each sleeve and the whole portfolio. `single_asset.*`: `SingleAssetAdapter` runs a one-asset `Strategy` inside a sleeve |
 | Swap (overnight interest) | `swap.*` |
 | Metrics | `metrics.*`: total return, CAGR, max drawdown, Sharpe, Sortino, MAR (CAGR / max drawdown), win rate, profit factor, expectancy |
 | Indicators | `indicators/core.hpp`, `indicators/atr.hpp` |
@@ -36,6 +37,19 @@ built when the engine is the top-level project.
 | Luck baseline | `null_series.*`: `shuffleReturns` makes a block-resampled copy of a series with the real order destroyed |
 
 Every part has its tests in `tests/`.
+
+## Sleeves
+A sleeve is a bucket of money with its own assets, its own strategy and its own cash; nothing moves between sleeves. This
+lets different strategies trade different assets side by side and be judged both separately and as one portfolio.
+
+1. `runSleeves(data, sleeves, spreads, swap)` cuts the aligned data into one slice per sleeve (every slice keeps all the
+   snapshots, so the curves line up), runs each slice with `runMultiBacktest` and adds the results up. The combined
+   equity curve is the sum of the sleeves' curves; the combined trades are tagged with their sleeve and carry the asset's
+   position in the full data. An asset may be in only one sleeve; every configuration mistake throws before anything runs.
+2. A sleeve's strategy is a `MultiStrategy`. A plain one-asset `Strategy` goes in a one-asset sleeve wrapped in
+   `SingleAssetAdapter` (it refuses more than one asset, because it would size and trade them as one).
+3. `computeSleeveMetrics(result, periodsPerYear)` measures each sleeve against its own cash and the portfolio against
+   the sum of the cash.
 
 ## Parametric density
 A strategy that only works at one exact setting is probably fitted to the past; one that works over a broad region of
