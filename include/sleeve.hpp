@@ -7,6 +7,7 @@
 
 #include "aligned.hpp"
 #include "backtester.hpp"
+#include "metrics.hpp"
 #include "multi_backtester.hpp"
 #include "swap.hpp"
 
@@ -68,3 +69,20 @@ struct SleeveResult
 // sleeves. Assets that are in no sleeve are simply not traded.
 SleeveResult runSleeves(const AlignedData& data, std::vector<Sleeve>& sleeves,
                         const std::vector<double>& spreads = {}, const SwapSchedule& swap = {});
+
+struct SleeveMetrics
+{
+    std::string name;
+    Metrics metrics;
+};
+
+struct PortfolioMetrics
+{
+    std::vector<SleeveMetrics> sleeves;         // in the order of SleeveResult::sleeves
+    Metrics combined;                           // the whole portfolio
+};
+
+// computeMetrics for every sleeve (against its own starting cash) and for the whole portfolio (against the sum of the
+// sleeves' cash), so the portfolio's return, drawdown and Sharpe are those of all the money together.
+// periodsPerYear is passed on unchanged (see computeMetrics).
+PortfolioMetrics computeSleeveMetrics(const SleeveResult& result, double periodsPerYear = 260.0);

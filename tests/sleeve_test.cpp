@@ -22,6 +22,8 @@
 //   4. runSleeves runs each sleeve alone on its slice and adds the results up: the combined equity curve is the sum of the
 //      sleeves' curves, each sleeve only sees its own assets and cash, combined trades are tagged with their sleeve and
 //      carry the asset's position in the full data, and every configuration error throws before any strategy is called.
+//   5. computeSleeveMetrics gives one Metrics per sleeve (against its own cash) and one for the portfolio (against the sum
+//      of the cash), in the sleeves' order.
 
 namespace
 {
@@ -645,4 +647,102 @@ TEST(RunSleeves, AnErrorInALaterSleeveMeansNoStrategyWasCalled)
     EXPECT_THROW(runSleeves(threeAssets(), sleeves), std::invalid_argument);
     EXPECT_EQ(spy.setSymbolsCalls, 0);
     EXPECT_TRUE(spy.barCounts.empty());
+}
+
+// ======================= computeSleeveMetrics =======================
+
+namespace
+{
+// GBPUSD (200,198,199,195,193,194): buying 10 on day 1 gives the equity 6000, 5980, 5990, 5950, 5930, 5940 in a 6000 sleeve.
+// The XAUUSD sleeve (4000) never trades. Together: 10000 at the start, 9930 at the lowest, 9940 at the end.
+SleeveResult losingAndIdle()
+{
+    std::vector<Sleeve> sleeves;
+    sleeves.push_back(makeSleeve("gbp", {"GBPUSD"}, scripted({{1, buy(10)}}), 6000.0));
+    sleeves.push_back(makeSleeve("idle", {"XAUUSD"}, scripted({}), 4000.0));
+    return runSleeves(threeAssets(), sleeves);
+}
+}
+
+TEST(SleeveMetrics, OneEntryPerSleeveInOrderWithItsName)
+{
+    const PortfolioMetrics m = computeSleeveMetrics(losingAndIdle());
+
+    ASSERT_EQ(m.sleeves.size(), 2u);
+    EXPECT_EQ(m.sleeves[0].name, "gbp");
+    EXPECT_EQ(m.sleeves[1].name, "idle");
+}
+
+TEST(SleeveMetrics, EachSleeveIsMeasuredAgainstItsOwnCash)
+{
+    const PortfolioMetrics m = computeSleeveMetrics(losingAndIdle());
+
+    EXPECT_NEAR(m.sleeves[0].metrics.totalReturn, 5940.0 / 6000.0 - 1.0, 1e-12);   // -1%
+    EXPECT_NEAR(m.sleeves[0].metrics.maxDrawdown, 70.0 / 6000.0, 1e-12);
+    EXPECT_DOUBLE_EQ(m.sleeves[1].metrics.totalReturn, 0.0);
+    EXPECT_DOUBLE_EQ(m.sleeves[1].metrics.maxDrawdown, 0.0);
+}
+
+TEST(SleeveMetrics, ThePortfolioIsMeasuredAgainstTheSumOfTheCash)
+{
+    const PortfolioMetrics m = computeSleeveMetrics(losingAndIdle());
+
+    EXPECT_NEAR(m.combined.totalReturn, 9940.0 / 10000.0 - 1.0, 1e-12);   // -0.6%, not -1% and not 9940/6000-1
+    EXPECT_NEAR(m.combined.maxDrawdown, 70.0 / 10000.0, 1e-12);           // the idle sleeve dilutes the drawdown
+}
+
+TEST(SleeveMetrics, OneSleeveGivesTheSameMetricsAsThePortfolio)
+{
+    std::vector<Sleeve> sleeves;
+    sleeves.push_back(makeSleeve("only", {"EURUSD"}, scripted({{1, buy(100)}, {4, closeOrder(1)}}), 5000.0));
+    const PortfolioMetrics m = computeSleeveMetrics(runSleeves(threeAssets(), sleeves));
+
+    const Metrics& a = m.sleeves[0].metrics;
+    const Metrics& b = m.combined;
+    EXPECT_DOUBLE_EQ(a.totalReturn, b.totalReturn);
+    EXPECT_DOUBLE_EQ(a.cagr, b.cagr);
+    EXPECT_DOUBLE_EQ(a.maxDrawdown, b.maxDrawdown);
+    EXPECT_DOUBLE_EQ(a.sharpe, b.sharpe);
+    EXPECT_DOUBLE_EQ(a.sortino, b.sortino);
+    EXPECT_EQ(a.trades, b.trades);
+    EXPECT_DOUBLE_EQ(a.expectancy, b.expectancy);
+    EXPECT_EQ(b.trades, 1);   // the scenario really closes a trade
+}
+
+TEST(SleeveMetrics, PortfolioTradeCountIsTheSumOfTheSleevesTrades)
+{
+    std::vector<Sleeve> sleeves;
+    sleeves.push_back(makeSleeve("eur", {"EURUSD"}, scripted({{1, buy(10)}, {3, closeOrder(1)}, {4, buy(10)}, {6, closeOrder(2)}}), 5000.0));
+    sleeves.push_back(makeSleeve("gbp", {"GBPUSD"}, scripted({{2, sell(10)}, {5, closeOrder(1)}}), 5000.0));
+    const PortfolioMetrics m = computeSleeveMetrics(runSleeves(threeAssets(), sleeves));
+
+    EXPECT_EQ(m.sleeves[0].metrics.trades, 2);
+    EXPECT_EQ(m.sleeves[1].metrics.trades, 1);
+    EXPECT_EQ(m.combined.trades, 3);
+}
+
+TEST(SleeveMetrics, PeriodsPerYearIsPassedOn)
+{
+    const SleeveResult r = losingAndIdle();
+
+    const PortfolioMetrics m = computeSleeveMetrics(r, 365.0);
+
+    const Metrics expectedSleeve = computeMetrics(r.sleeves[0].result, 6000.0, 365.0);
+    const Metrics expectedAll = computeMetrics(r.combined, 10000.0, 365.0);
+    EXPECT_DOUBLE_EQ(m.sleeves[0].metrics.cagr, expectedSleeve.cagr);
+    EXPECT_DOUBLE_EQ(m.combined.cagr, expectedAll.cagr);
+    EXPECT_NE(m.combined.cagr, computeSleeveMetrics(r, 260.0).combined.cagr);   // and it makes a difference
+}
+
+TEST(SleeveMetrics, NoSnapshotsGivesZeroMetricsWithoutCrashing)
+{
+    AlignedData data;
+    data.symbols = {"EURUSD"};
+    std::vector<Sleeve> sleeves;
+    sleeves.push_back(makeSleeve("a", {"EURUSD"}, scripted({}), 1000.0));
+
+    const PortfolioMetrics m = computeSleeveMetrics(runSleeves(data, sleeves));
+
+    EXPECT_EQ(m.combined.trades, 0);
+    EXPECT_DOUBLE_EQ(m.combined.totalReturn, 0.0);
 }

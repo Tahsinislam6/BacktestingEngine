@@ -160,3 +160,19 @@ SleeveResult runSleeves(const AlignedData& data, std::vector<Sleeve>& sleeves,
 
     return out;
 }
+
+PortfolioMetrics computeSleeveMetrics(const SleeveResult& result, double periodsPerYear)
+{
+    PortfolioMetrics out;
+
+    // The portfolio started with all the sleeves' money together.
+    double totalCash = 0.0;
+    for (const SleeveRun& sleeve : result.sleeves)
+    {
+        out.sleeves.push_back(SleeveMetrics{sleeve.name, computeMetrics(sleeve.result, sleeve.cash, periodsPerYear)});
+        totalCash += sleeve.cash;
+    }
+
+    out.combined = computeMetrics(result.combined, totalCash, periodsPerYear);
+    return out;
+}
