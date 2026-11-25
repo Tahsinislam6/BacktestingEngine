@@ -2,7 +2,7 @@
   import SweepHeatmap from './SweepHeatmap.svelte';
   import NullHistogram from './NullHistogram.svelte';
   import CancelButton from './CancelButton.svelte';
-  import { whenText, num, pct } from '../lib/format.js';
+  import { whenText, num, pct, layoutText } from '../lib/format.js';
 
   let { run } = $props();
 
@@ -15,7 +15,7 @@
 <div class="view">
   <div class="panel head">
     <h3>Sweep #{run.id} <span class="kind">density</span> <span class="badge {run.status}">{run.status}</span></h3>
-    <p class="muted">{spec.strategy} on {spec.dataset} · {whenText(run.createdAt)} UTC</p>
+    <p class="muted">{spec.strategy} on {spec.dataset}{layoutText(spec.layout)} · {whenText(run.createdAt)} UTC</p>
     <p class="muted small">
       {spec.axes.map(axisText).join(' · ')}<br />
       {spec.metric} above {spec.threshold} · radius {spec.radius} · min {spec.minTrades} trades ·

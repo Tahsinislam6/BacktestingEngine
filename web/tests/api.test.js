@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { getStrategies, getDatasets, postRun, postSweep, postPortfolio, postCancel, getRun, getRuns } from '../src/lib/api.js';
+import { getStrategies, getDatasets, postRun, postSweep, postPortfolio, postCancel, getRun, getRuns, getLayouts } from '../src/lib/api.js';
 
 function reply(status, body) {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
@@ -38,6 +38,12 @@ describe('api', () => {
     expect(path).toBe('/api/sweeps');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body)).toEqual({ strategy: 'a', note: 'n' });
+  });
+  it('GETs the layouts from their own path', async () => {
+    const fetchMock = vi.fn(async () => reply(200, [{ name: 'auto', builtin: true, description: '' }]));
+    vi.stubGlobal('fetch', fetchMock);
+    expect((await getLayouts())[0].name).toBe('auto');
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/layouts');
   });
   it('POSTs a cancel to the run and returns what the server said', async () => {
     const fetchMock = vi.fn(async () => reply(202, { id: '000004', status: 'stopping' }));

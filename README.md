@@ -26,6 +26,7 @@ only; the default port is 8080). With `--web` it also serves the built web app a
 |---|---|
 | `GET /api/strategies` | the strategies and their parameter schemas (default, min, max, integer) |
 | `GET /api/datasets` | the file names in the data folder |
+| `GET /api/layouts` | the ways a data file can be read: `[{name, builtin, description}]`, `auto` first (see "Data layouts") |
 | `POST /api/runs` | `202 {"id": "000001"}`; the body is the same request the `runner` takes. A bad request is `400 {"error": ...}` |
 | `POST /api/sweeps` | `202 {"id": ...}`; a density sweep (see below). A bad request is `400` |
 | `POST /api/portfolios` | `202 {"id": ...}`; a portfolio (see below). A bad request is `400` |
@@ -56,6 +57,26 @@ sleeves' equity stacked with the portfolio's drawdown, and the trades by sleeve.
 
 While working on the app, run the server (without `--web`) and `npm run dev` in `web/`: the page is at
 http://localhost:5173 and `/api` is forwarded to the server on port 8080.
+
+## Data layouts
+
+A request names how its dataset file is read with an optional `"layout"` (a sleeve has its own). `auto`, the default, reads
+a file whose header has `<DATE>` as `stooq` and any other file as `simple`. The built-ins are:
+
+- `simple`: `timestamp,open,high,low,close` with a millisecond timestamp.
+- `stooq`: `<TICKER>,<PER>,<DATE>,<TIME>,<OPEN>,<HIGH>,<LOW>,<CLOSE>,<VOL>,<OPENINT>`, dates like `20100717`.
+
+For another format, put a `layouts.json` in the data folder. It is read again on every use, so an edit needs no restart.
+Each entry is a name and the `CsvLayout` fields (see `include/loader.hpp`); every field is optional and defaults to `simple`:
+
+    { "my_exchange": { "description": "semicolons, ISO dates", "delimiter": ";", "hasHeader": true,
+                       "timeFormat": "isoDate", "time": "Day", "open": "Open", "high": "High", "low": "Low",
+                       "close": "Close", "volume": "Volume" } }
+
+`timeFormat` is `raw`, `epochSeconds`, `compactDate` or `isoDate`; a column is its header text or its 0-based position.
+A name may not be a built-in name. A mistake in the file (bad JSON, an unknown key, a wrong type) is reported with the
+entry's name, and until it is fixed requests fail with that message. The layout used is saved in the run's `spec`.
+The web app shows a Layout dropdown beside every dataset.
 
 ## Density sweeps
 `POST /api/sweeps` runs the density test of the research program `density_sweep` without recompiling: the strategy over a

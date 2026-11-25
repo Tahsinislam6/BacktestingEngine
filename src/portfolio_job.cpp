@@ -10,6 +10,7 @@
 
 #include "aligned.hpp"
 #include "job.hpp"
+#include "layouts.hpp"
 #include "single_asset.hpp"
 
 namespace
@@ -65,6 +66,14 @@ void validatePortfolioSpec(const StrategyRegistry& registry, const std::string& 
             throw std::invalid_argument("sleeve " + s.name + ": cash must be above 0");
         registry.resolveParams(s.strategy, s.params);           // known strategy, known parameters, inside the limits
         resolveDataset(dataDir, s.dataset);
+        try
+        {
+            requireLayout(dataDir, s.layout);
+        }
+        catch (const std::invalid_argument& e)
+        {
+            throw std::invalid_argument("sleeve " + s.name + ": " + e.what());
+        }
     }
 }
 
@@ -87,7 +96,7 @@ PortfolioOutput runPortfolio(const StrategyRegistry& registry, const std::string
     std::vector<BarSeries> series;
     for (const PortfolioSleeve& s : out.spec.sleeves)
     {
-        BarSeries bars = loadDataset(dataDir, s.dataset);
+        BarSeries bars = loadDataset(dataDir, s.dataset, s.layout);
         if (bars.bars.empty())
             throw std::runtime_error("dataset has no bars: " + s.dataset);
         bars.symbol = s.name;

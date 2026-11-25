@@ -1,12 +1,14 @@
 <script>
+  import LayoutSelect from './LayoutSelect.svelte';
   import { defaultParams, paramError } from '../lib/params.js';
   import { METRICS, axisError, defaultAxis, gridSize, sweepError, buildSweepRequest } from '../lib/sweep.js';
   import { num } from '../lib/format.js';
 
-  let { strategies, datasets, ideasTried, onsubmit } = $props();
+  let { strategies, datasets, layouts = [], ideasTried, onsubmit } = $props();
 
   let strategyName = $state('');
   let dataset = $state('');
+  let layout = $state('auto');
   let params = $state({});
   let axes = $state([
     { param: '', from: '', to: '', step: '' },
@@ -96,7 +98,7 @@
     error = '';
     try {
       await onsubmit(buildSweepRequest({
-        strategy: strategyName, dataset, params, axes, metric, threshold, radius, minTrades, nullRuns, block, cash, periodsPerYear, note,
+        strategy: strategyName, dataset, params, axes, metric, threshold, radius, minTrades, nullRuns, block, cash, periodsPerYear, note, layout,
       }));
     } catch (e) {
       error = e.message;
@@ -113,6 +115,8 @@
     <div class="field">
       <label for="s-dataset">Dataset</label>
       <select id="s-dataset" bind:value={dataset}>{#each datasets as name}<option value={name}>{name}</option>{/each}</select>
+      <label for="s-layout">Layout</label>
+      <LayoutSelect id="s-layout" {layouts} bind:value={layout} />
     </div>
     <div class="field">
       <label for="s-strategy">Strategy</label>

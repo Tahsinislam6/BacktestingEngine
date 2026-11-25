@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pct, num, days, dateOf, whenText } from '../src/lib/format.js';
+import { pct, num, days, dateOf, whenText, layoutText } from '../src/lib/format.js';
 
 // Formatting rules: a missing or non-finite value is always an em dash, never "NaN" or "null".
 describe('format', () => {
@@ -41,5 +41,14 @@ describe('format', () => {
     expect(whenText('2026-11-25T10:51:22Z')).toBe('2026-11-25 10:51');
     expect(whenText('')).toBe('—');
     expect(whenText(undefined)).toBe('—');
+  });
+});
+
+describe('layoutText', () => {
+  it('says nothing for auto, a missing layout (older runs) or an empty one', () => {
+    for (const l of ['auto', undefined, null, '']) expect(layoutText(l)).toBe('');
+  });
+  it('names any other layout, ready to join onto a line', () => {
+    expect(layoutText('stooq')).toBe(' · layout stooq');
   });
 });

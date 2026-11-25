@@ -48,6 +48,13 @@ describe('params', () => {
       params: { lookback: 30, fraction: 0.5 },
       cash: 5000,
       periodsPerYear: 365,
+      layout: 'auto',
     });
+  });
+  it('buildRequest sends the chosen layout, and auto when there is none', () => {
+    const form = { strategy: 'demo', dataset: 'x.txt', params: {}, cash: '1', periodsPerYear: '260' };
+    expect(buildRequest({ ...form, layout: 'stooq' }).layout).toBe('stooq');
+    expect(buildRequest({ ...form, layout: '' }).layout).toBe('auto');
+    expect(buildRequest(form).layout).toBe('auto');
   });
 });

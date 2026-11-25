@@ -58,7 +58,7 @@ RunSpec runSpecFromJson(const json& request)
     for (const auto& item : request.items())
     {
         const std::string& key = item.key();
-        if (key != "strategy" && key != "dataset" && key != "params" && key != "cash" && key != "periodsPerYear")
+        if (key != "strategy" && key != "dataset" && key != "params" && key != "cash" && key != "periodsPerYear" && key != "layout")
             throw std::invalid_argument("unknown key in request: " + key);
     }
 
@@ -87,6 +87,12 @@ RunSpec runSpecFromJson(const json& request)
     }
     spec.cash = numberMember(request, "cash", spec.cash);
     spec.periodsPerYear = numberMember(request, "periodsPerYear", spec.periodsPerYear);
+    if (const auto it = request.find("layout"); it != request.end())
+    {
+        if (!it->is_string())
+            throw std::invalid_argument("\"layout\" must be text");
+        spec.layout = it->get<std::string>();
+    }
     return spec;
 }
 
@@ -100,6 +106,7 @@ json toJson(const RunSpec& spec)
         j["params"][name] = value;
     j["cash"] = spec.cash;
     j["periodsPerYear"] = spec.periodsPerYear;
+    j["layout"] = spec.layout;
     return j;
 }
 

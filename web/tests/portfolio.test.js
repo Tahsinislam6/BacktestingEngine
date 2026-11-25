@@ -24,6 +24,7 @@ describe('newSleeve', () => {
     expect(s.params).toEqual({ fraction: '1' });
     expect(s.name).toBe('BTC');
     expect(s.cash).toBe('1000');
+    expect(s.layout).toBe('auto');
   });
   it('names it after the dataset and keeps names unique', () => {
     expect(newSleeve(strategies, datasets, ['BTC']).name).toBe('BTC_2');
@@ -86,15 +87,15 @@ describe('buildPortfolioRequest', () => {
     const body = buildPortfolioRequest({
       sleeves: [
         { name: 'BTC', dataset: 'btc.v.txt', strategy: 'inertia_breakout', params: { lookback: '35', allowance: '5' }, cash: '3000' },
-        { name: 'ETH', dataset: 'eth.v.txt', strategy: 'buy_and_hold', params: { fraction: '1' }, cash: '5000' },
+        { name: 'ETH', dataset: 'eth.v.txt', strategy: 'buy_and_hold', params: { fraction: '1' }, cash: '5000', layout: 'stooq' },
       ],
       commonPeriodOnly: true,
       periodsPerYear: '365',
     });
     expect(body).toEqual({
       sleeves: [
-        { name: 'BTC', dataset: 'btc.v.txt', strategy: 'inertia_breakout', params: { lookback: 35, allowance: 5 }, cash: 3000 },
-        { name: 'ETH', dataset: 'eth.v.txt', strategy: 'buy_and_hold', params: { fraction: 1 }, cash: 5000 },
+        { name: 'BTC', dataset: 'btc.v.txt', strategy: 'inertia_breakout', params: { lookback: 35, allowance: 5 }, cash: 3000, layout: 'auto' },
+        { name: 'ETH', dataset: 'eth.v.txt', strategy: 'buy_and_hold', params: { fraction: 1 }, cash: 5000, layout: 'stooq' },
       ],
       commonPeriodOnly: true,
       periodsPerYear: 365,

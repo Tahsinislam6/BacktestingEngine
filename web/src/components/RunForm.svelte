@@ -1,10 +1,12 @@
 <script>
+  import LayoutSelect from './LayoutSelect.svelte';
   import { defaultParams, paramError, buildRequest } from '../lib/params.js';
 
-  let { strategies, datasets, onsubmit } = $props();
+  let { strategies, datasets, layouts = [], onsubmit } = $props();
 
   let strategyName = $state('');
   let dataset = $state('');
+  let layout = $state('auto');
   let params = $state({});
   let cash = $state('10000');
   let periodsPerYear = $state('260');
@@ -42,7 +44,7 @@
     busy = true;
     error = '';
     try {
-      await onsubmit(buildRequest({ strategy: strategyName, dataset, params, cash, periodsPerYear }));
+      await onsubmit(buildRequest({ strategy: strategyName, dataset, params, cash, periodsPerYear, layout }));
     } catch (e) {
       error = e.message;
     } finally {
@@ -61,6 +63,11 @@
         <option value={name}>{name}</option>
       {/each}
     </select>
+  </div>
+
+  <div class="field">
+    <label for="layout">Layout</label>
+    <LayoutSelect id="layout" {layouts} bind:value={layout} />
   </div>
 
   <div class="field">

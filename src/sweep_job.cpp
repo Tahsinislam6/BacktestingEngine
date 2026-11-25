@@ -12,6 +12,7 @@
 
 #include "density.hpp"
 #include "job.hpp"
+#include "layouts.hpp"
 #include "null_series.hpp"
 #include "parameter_grid.hpp"
 
@@ -94,6 +95,7 @@ void validateSweepSpec(const StrategyRegistry& registry, const std::string& data
     const StrategyInfo& info = findStrategy(registry, spec.strategy);
     metricByName(spec.metric);
     resolveDataset(dataDir, spec.dataset);
+    requireLayout(dataDir, spec.layout);
 
     if (!std::isfinite(spec.threshold))
         throw std::invalid_argument("threshold must be a number");
@@ -167,7 +169,7 @@ SweepOutput runSweep(const StrategyRegistry& registry, const std::string& dataDi
     out.spec = resolveSweepSpec(registry, request);
     const SweepSpec& spec = out.spec;
 
-    const BarSeries series = loadDataset(dataDir, spec.dataset);
+    const BarSeries series = loadDataset(dataDir, spec.dataset, spec.layout);
     if (series.bars.empty())
         throw std::runtime_error("dataset has no bars: " + spec.dataset);
     out.bars = series.bars.size();

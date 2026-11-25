@@ -353,3 +353,48 @@ TEST_F(PortfolioJobTest, RunPortfolioJsonRejectsBadText)
     j["sleeves"][0]["cash"] = 0;
     EXPECT_THROW(runPortfolioJson(registry_, dir(), j.dump()), std::invalid_argument);
 }
+
+// ---- layouts: each sleeve names how its own file is read ----
+
+TEST_F(PortfolioJobTest, ASleeveLayoutDefaultsToAutoAndIsReadFromJson)
+{
+    EXPECT_EQ(PortfolioSleeve{}.layout, "auto");
+    EXPECT_EQ(portfolioSpecFromJson(requestJson()).sleeves[0].layout, "auto");
+    json j = requestJson();
+    j["sleeves"][1]["layout"] = "stooq";
+    const PortfolioSpec p = portfolioSpecFromJson(j);
+    EXPECT_EQ(p.sleeves[0].layout, "auto");
+    EXPECT_EQ(p.sleeves[1].layout, "stooq");
+    EXPECT_EQ(toJson(p).at("sleeves")[1].at("layout"), "stooq");
+    EXPECT_EQ(toJson(p).at("sleeves")[0].at("layout"), "auto");
+    j["sleeves"][1]["layout"] = 3;
+    EXPECT_THROW(portfolioSpecFromJson(j), std::invalid_argument);
+}
+
+TEST_F(PortfolioJobTest, AnUnknownSleeveLayoutIsRefusedAndNamesTheSleeve)
+{
+    PortfolioSpec p = spec();
+    p.sleeves[1].layout = "nope";
+    try
+    {
+        validatePortfolioSpec(registry_, dir(), p);
+        FAIL();
+    }
+    catch (const std::invalid_argument& e)
+    {
+        EXPECT_NE(std::string(e.what()).find("down"), std::string::npos) << e.what();
+    }
+}
+
+TEST_F(PortfolioJobTest, EachSleeveUsesItsOwnLayout)
+{
+    std::ofstream(dir_ / "simple.csv") << "timestamp,open,high,low,close\n1577836800000,100,100,100,100\n1577923200000,110,110,110,110\n";
+    PortfolioSpec p = spec();                            // up.txt and down.txt are Stooq files
+    p.sleeves[0].layout = "stooq";
+    p.sleeves[1].layout = "stooq";
+    EXPECT_NO_THROW(run(p));
+    p.sleeves[1].layout = "simple";                      // wrong for down.txt: only that sleeve is read differently
+    EXPECT_THROW(run(p), std::exception);
+    p.sleeves[1] = {"flat", "simple.csv", "scaled_hold", {{"size", 1}, {"delay", 0}}, 500, "simple"};
+    EXPECT_NO_THROW(run(p));                             // a Stooq sleeve and a simple sleeve in one portfolio
+}

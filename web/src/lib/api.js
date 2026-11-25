@@ -19,6 +19,8 @@ async function request(path, init) {
 
 export const getStrategies = () => request('/api/strategies');
 export const getDatasets = () => request('/api/datasets');
+// The ways a data file can be read: [{name, builtin, description}], "auto" first.
+export const getLayouts = () => request('/api/layouts');
 export const getRuns = () => request('/api/runs');
 export const getRun = (id) => request(`/api/runs/${id}`);
 

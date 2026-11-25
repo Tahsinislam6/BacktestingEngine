@@ -116,8 +116,14 @@ describe('buildSweepRequest', () => {
         { param: 'allowance', from: 1, to: 60, step: 1 },
       ],
       metric: 'mar', threshold: 0, radius: 1, minTrades: 30, nullRuns: 200, block: 5,
-      cash: 10000, periodsPerYear: 260, note: 'PASS if ...',
+      cash: 10000, periodsPerYear: 260, note: 'PASS if ...', layout: 'auto',
     });
+  });
+  it('sends the chosen layout, and auto when there is none', () => {
+    const form = { strategy: 's', dataset: 'd', axes: [], params: {}, metric: 'mar', threshold: '0', radius: '1', minTrades: '0', nullRuns: '1', block: '1', cash: '1', periodsPerYear: '260', note: 'n' };
+    expect(buildSweepRequest({ ...form, layout: 'mine' }).layout).toBe('mine');
+    expect(buildSweepRequest({ ...form, layout: '' }).layout).toBe('auto');
+    expect(buildSweepRequest(form).layout).toBe('auto');
   });
 });
 

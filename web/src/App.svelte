@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { getStrategies, getDatasets, getRuns, getRun, postRun, postSweep, postPortfolio } from './lib/api.js';
+  import { getStrategies, getDatasets, getLayouts, getRuns, getRun, postRun, postSweep, postPortfolio } from './lib/api.js';
   import { isActive, isFinished } from './lib/status.js';
   import { ideasByDataset } from './lib/sweep.js';
   import RunForm from './components/RunForm.svelte';
@@ -13,6 +13,7 @@
 
   let strategies = $state([]);
   let datasets = $state([]);
+  let layouts = $state([]);
   let runs = $state([]);
   let selected = $state(null);
   let loadError = $state('');
@@ -55,7 +56,7 @@
 
   onMount(async () => {
     try {
-      [strategies, datasets, runs] = await Promise.all([getStrategies(), getDatasets(), getRuns()]);
+      [strategies, datasets, layouts, runs] = await Promise.all([getStrategies(), getDatasets(), getLayouts(), getRuns()]);
       if (runs.length > 0) await select(runs[0].id);
     } catch (e) {
       loadError = e.message;
@@ -102,11 +103,11 @@
         <button class:on={mode === 'portfolio'} onclick={() => (mode = 'portfolio')}>Portfolio</button>
       </div>
       {#if mode === 'run'}
-        <RunForm {strategies} {datasets} onsubmit={submit} />
+        <RunForm {strategies} {datasets} {layouts} onsubmit={submit} />
       {:else if mode === 'sweep'}
-        <SweepForm {strategies} {datasets} {ideasTried} onsubmit={submitSweep} />
+        <SweepForm {strategies} {datasets} {layouts} {ideasTried} onsubmit={submitSweep} />
       {:else}
-        <PortfolioForm {strategies} {datasets} onsubmit={submitPortfolio} />
+        <PortfolioForm {strategies} {datasets} {layouts} onsubmit={submitPortfolio} />
       {/if}
       <History {runs} selectedId={selected?.id} onselect={select} {ideasTried} />
     </aside>

@@ -45,6 +45,7 @@ struct SweepSpec
     double cash{10000.0};
     double periodsPerYear{260.0};   // bars per year, for CAGR / Sharpe / Sortino / MAR
     std::string note;               // what is expected and what counts as a pass; must not be blank
+    std::string layout{"auto"};     // how the dataset file is read: a name from listLayouts (layouts.hpp)
 };
 
 struct SweepOutput
@@ -86,7 +87,7 @@ std::vector<double> expandAxis(const AxisSpec& axis);
 std::function<double(const Metrics&)> metricByName(const std::string& name);
 
 // Everything that can be checked without reading the data: a known strategy, a non-blank note, a known metric, a dataset
-// name that is a file in the folder, exactly two different axes that are parameters of the strategy with every value inside
+// name that is a file in the folder, a known layout, exactly two different axes that are parameters of the strategy with every value inside
 // the limits, no fixed value for a swept parameter, radius 0..20, minTrades >= 0, nullRuns 1..1000, block 1..1000, cash and
 // periodsPerYear above 0, a finite threshold, at most 50,000 cells and at most 2,000,000 backtests (cells x (1 + nullRuns)).
 // Throws std::invalid_argument. runSweep calls it first; the run manager calls it at submit time.

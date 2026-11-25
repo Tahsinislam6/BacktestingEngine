@@ -1,4 +1,6 @@
 #include "api.hpp"
+
+#include "layouts.hpp"
 #include "portfolio_job_json.hpp"
 #include "sweep_job_json.hpp"
 
@@ -117,6 +119,9 @@ HttpResponse ApiHandler::route(const std::string& method, const std::string& pat
 
     if (path == "/api/datasets")
         return method == "GET" ? reply(200, listDatasets(dataDir_)) : error(405, "use GET");
+
+    if (path == "/api/layouts")
+        return method == "GET" ? reply(200, layoutsToJson(dataDir_)) : error(405, "use GET");
 
     if (path == "/api/sweeps")
     {

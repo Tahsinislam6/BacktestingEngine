@@ -76,7 +76,7 @@ SweepSpec sweepSpecFromJson(const json& request)
     if (!request.is_object())
         throw std::invalid_argument("a request must be a JSON object");
     onlyKeys(request, {"strategy", "dataset", "params", "axes", "metric", "threshold", "radius", "minTrades", "nullRuns",
-                       "block", "cash", "periodsPerYear", "note"}, "request");
+                       "block", "cash", "periodsPerYear", "note", "layout"}, "request");
 
     SweepSpec spec;
     spec.strategy = text(request, "strategy");
@@ -92,6 +92,8 @@ SweepSpec sweepSpecFromJson(const json& request)
         spec.cash = real(request, "cash");
     if (request.contains("periodsPerYear"))
         spec.periodsPerYear = real(request, "periodsPerYear");
+    if (request.contains("layout"))
+        spec.layout = text(request, "layout");
 
     if (const auto it = request.find("params"); it != request.end())
     {
@@ -129,7 +131,7 @@ json toJson(const SweepSpec& spec)
     return {{"strategy", spec.strategy}, {"dataset", spec.dataset}, {"params", params}, {"axes", axes},
             {"metric", spec.metric}, {"threshold", number(spec.threshold)}, {"radius", spec.radius},
             {"minTrades", spec.minTrades}, {"nullRuns", spec.nullRuns}, {"block", spec.block}, {"cash", spec.cash},
-            {"periodsPerYear", spec.periodsPerYear}, {"note", spec.note}};
+            {"periodsPerYear", spec.periodsPerYear}, {"note", spec.note}, {"layout", spec.layout}};
 }
 
 json toJson(const SweepOutput& out)

@@ -25,6 +25,7 @@ struct PortfolioSleeve
     std::string strategy;
     NamedParams params;             // may be partial; defaults fill the rest
     double cash{};                  // this sleeve's own starting cash, above 0
+    std::string layout{"auto"};     // how this sleeve's dataset file is read: a name from listLayouts (layouts.hpp)
 };
 
 struct PortfolioSpec

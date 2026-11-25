@@ -21,6 +21,7 @@ export function newSleeve(strategies, datasets, usedNames, { dataset, strategy }
     strategy: chosenStrategy,
     params: defaultParams(strategies.find((s) => s.name === chosenStrategy)),
     cash: '1000',
+    layout: 'auto',
   };
 }
 
@@ -77,7 +78,7 @@ export function buildPortfolioRequest({ sleeves, commonPeriodOnly, periodsPerYea
     sleeves: sleeves.map((s) => {
       const params = {};
       for (const [name, text] of Object.entries(s.params)) params[name] = Number(text);
-      return { name: s.name.trim(), dataset: s.dataset, strategy: s.strategy, params, cash: Number(s.cash) };
+      return { name: s.name.trim(), dataset: s.dataset, strategy: s.strategy, params, cash: Number(s.cash), layout: s.layout || 'auto' };
     }),
     commonPeriodOnly: !!commonPeriodOnly,
     periodsPerYear: Number(periodsPerYear),

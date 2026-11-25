@@ -7,36 +7,10 @@
 #include <fstream>
 #include <stdexcept>
 
+#include "layouts.hpp"
 #include "loader.hpp"
 
 namespace fs = std::filesystem;
-
-namespace
-{
-    // The layout of a Stooq daily file: <TICKER>,<PER>,<DATE>,<TIME>,<OPEN>,<HIGH>,<LOW>,<CLOSE>,<VOL>,<OPENINT>.
-    CsvLayout stooqLayout()
-    {
-        CsvLayout layout;
-        layout.timeFormat = TimeFormat::CompactDate;
-        layout.time = "date";
-        layout.timeOfDay = "time";
-        layout.open = "open";
-        layout.high = "high";
-        layout.low = "low";
-        layout.close = "close";
-        layout.volume = "vol";
-        return layout;
-    }
-
-    bool isStooqFile(const std::string& path)
-    {
-        std::ifstream in(path);
-        std::string header;
-        std::getline(in, header);
-        std::transform(header.begin(), header.end(), header.begin(), [](unsigned char c) { return std::tolower(c); });
-        return header.find("<date>") != std::string::npos;
-    }
-}
 
 std::vector<std::string> listDatasets(const std::string& dataDir)
 {
@@ -70,10 +44,13 @@ std::string resolveDataset(const std::string& dataDir, const std::string& name)
     return path.string();
 }
 
-BarSeries loadDataset(const std::string& dataDir, const std::string& name)
+BarSeries loadDataset(const std::string& dataDir, const std::string& name, const std::string& layout)
 {
+    requireLayout(dataDir, layout);
     const std::string path = resolveDataset(dataDir, name);
-    return isStooqFile(path) ? loadCsv(path, name, stooqLayout()) : loadCsv(path, name);
+    if (layout == "auto")
+        return loadCsv(path, name, layoutByName(dataDir, looksLikeStooq(path) ? "stooq" : "simple"));
+    return loadCsv(path, name, layoutByName(dataDir, layout));
 }
 
 void validateSpec(const StrategyRegistry& registry, const std::string& dataDir, const RunSpec& spec)
@@ -84,6 +61,7 @@ void validateSpec(const StrategyRegistry& registry, const std::string& dataDir, 
         throw std::invalid_argument("periodsPerYear must be above 0");
     registry.resolveParams(spec.strategy, spec.params);
     resolveDataset(dataDir, spec.dataset);
+    requireLayout(dataDir, spec.layout);
 }
 
 RunOutput runJob(const StrategyRegistry& registry, const std::string& dataDir, const RunSpec& spec)
@@ -94,7 +72,7 @@ RunOutput runJob(const StrategyRegistry& registry, const std::string& dataDir, c
     out.spec = spec;
     out.spec.params = registry.resolveParams(spec.strategy, spec.params);    // also checks the strategy name
 
-    const BarSeries series = loadDataset(dataDir, spec.dataset);
+    const BarSeries series = loadDataset(dataDir, spec.dataset, spec.layout);
     if (series.bars.empty())
         throw std::runtime_error("dataset has no bars: " + spec.dataset);
 

@@ -18,7 +18,7 @@ export function paramError(spec, text) {
 }
 
 // The body of POST /api/runs from the form's values.
-export function buildRequest({ strategy, dataset, params, cash, periodsPerYear }) {
+export function buildRequest({ strategy, dataset, params, cash, periodsPerYear, layout }) {
   const numbers = {};
   for (const [name, text] of Object.entries(params)) numbers[name] = Number(text);
   return {
@@ -27,5 +27,6 @@ export function buildRequest({ strategy, dataset, params, cash, periodsPerYear }
     params: numbers,
     cash: Number(cash),
     periodsPerYear: Number(periodsPerYear),
+    layout: layout || 'auto',
   };
 }

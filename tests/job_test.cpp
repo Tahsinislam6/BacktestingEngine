@@ -336,3 +336,67 @@ TEST_F(JobTest, StrategiesToJsonListsSchemas)
     EXPECT_DOUBLE_EQ(p.at("max").get<double>(), 1.0);
     EXPECT_EQ(p.at("integer"), false);
 }
+
+// ---- layouts: a request may name how the dataset file is read ("auto" when it does not) ----
+
+TEST_F(JobTest, ALayoutDefaultsToAutoAndIsReadFromJson)
+{
+    EXPECT_EQ(RunSpec{}.layout, "auto");
+    EXPECT_EQ(runSpecFromJson(json::parse(R"({"strategy":"a","dataset":"b"})")).layout, "auto");
+    EXPECT_EQ(runSpecFromJson(json::parse(R"({"strategy":"a","dataset":"b","layout":"stooq"})")).layout, "stooq");
+    EXPECT_THROW(runSpecFromJson(json::parse(R"({"strategy":"a","dataset":"b","layout":5})")), std::invalid_argument);
+}
+
+TEST_F(JobTest, TheResultSaysWhichLayoutWasUsed)
+{
+    writeStooq();
+    const json doc = json::parse(runJobJson(registry_, dir(), R"({"strategy":"buy_and_hold","dataset":"x.txt"})"));
+    EXPECT_EQ(doc.at("spec").at("layout"), "auto");
+    const json doc2 = json::parse(runJobJson(registry_, dir(), R"({"strategy":"buy_and_hold","dataset":"x.txt","layout":"stooq"})"));
+    EXPECT_EQ(doc2.at("spec").at("layout"), "stooq");
+}
+
+TEST_F(JobTest, AnUnknownLayoutIsRefusedBeforeAnythingRuns)
+{
+    writeStooq();
+    RunSpec spec;
+    spec.strategy = "buy_and_hold";
+    spec.dataset = "x.txt";
+    spec.layout = "nope";
+    EXPECT_THROW(validateSpec(registry_, dir(), spec), std::invalid_argument);
+    EXPECT_THROW(runJob(registry_, dir(), spec), std::invalid_argument);
+    spec.layout = "stooq";
+    EXPECT_NO_THROW(validateSpec(registry_, dir(), spec));
+}
+
+TEST_F(JobTest, TheChosenLayoutIsReallyUsedNotGuessed)
+{
+    writeStooq();                                        // a Stooq file: "auto" and "stooq" read it, "simple" cannot
+    RunSpec spec;
+    spec.strategy = "buy_and_hold";
+    spec.dataset = "x.txt";
+    spec.cash = 1000;
+    spec.layout = "stooq";
+    EXPECT_NEAR(runJob(registry_, dir(), spec).result.finalEquity, 1331.0, 1e-9);
+    spec.layout = "simple";
+    EXPECT_THROW(runJob(registry_, dir(), spec), std::exception);
+}
+
+TEST_F(JobTest, ARunOnAnotherFormatNeedsItsOwnLayout)
+{
+    write("layouts.json", R"({ "other": { "delimiter": ";", "timeFormat": "isoDate", "time": "Date",
+                                          "open": "Open", "high": "High", "low": "Low", "close": "Close" } })");
+    write("o.csv", "Date;Open;High;Low;Close\n2020-01-01;100;100;100;100\n2020-01-02;110;110;110;110\n");
+    RunSpec spec;
+    spec.strategy = "buy_and_hold";
+    spec.dataset = "o.csv";
+    spec.cash = 1000;
+    spec.layout = "other";
+
+    const RunOutput out = runJob(registry_, dir(), spec);
+
+    EXPECT_NEAR(out.result.finalEquity, 1100.0, 1e-9);
+    EXPECT_EQ(out.spec.layout, "other");
+    spec.layout = "auto";
+    EXPECT_THROW(runJob(registry_, dir(), spec), std::exception);
+}

@@ -3,7 +3,7 @@
   import EquityChart from './EquityChart.svelte';
   import TradesTable from './TradesTable.svelte';
   import CancelButton from './CancelButton.svelte';
-  import { whenText, num } from '../lib/format.js';
+  import { whenText, num, layoutText } from '../lib/format.js';
 
   let { run } = $props();
 
@@ -16,7 +16,7 @@
     <div>
       <h3>Run #{run.id} <span class="badge {run.status}">{run.status}</span></h3>
       <p class="muted">
-        {spec.strategy} on {spec.dataset} · cash {num(spec.cash, 0)} · {spec.periodsPerYear} bars/year · {whenText(run.createdAt)} UTC
+        {spec.strategy} on {spec.dataset} · cash {num(spec.cash, 0)} · {spec.periodsPerYear} bars/year{layoutText(spec.layout)} · {whenText(run.createdAt)} UTC
       </p>
       {#if params.length}
         <p class="params mono">{#each params as [name, value]}<span>{name} = {value}</span>{/each}</p>

@@ -635,3 +635,40 @@ TEST_F(SweepJobTest, RunSweepJsonRejectsBadText)
     j["note"] = "";
     EXPECT_THROW(runSweepJson(registry_, dir(), j.dump()), std::invalid_argument);
 }
+
+// ---- layouts ----
+
+TEST(SweepJson, LayoutDefaultsToAutoAndIsReadAndEchoed)
+{
+    EXPECT_EQ(SweepSpec{}.layout, "auto");
+    EXPECT_EQ(sweepSpecFromJson(requestJson()).layout, "auto");
+    json j = requestJson();
+    j["layout"] = "stooq";
+    const SweepSpec s = sweepSpecFromJson(j);
+    EXPECT_EQ(s.layout, "stooq");
+    EXPECT_EQ(toJson(s).at("layout"), "stooq");
+    EXPECT_EQ(toJson(sweepSpecFromJson(requestJson())).at("layout"), "auto");
+    j["layout"] = 3;
+    EXPECT_THROW(sweepSpecFromJson(j), std::invalid_argument);
+}
+
+TEST_F(SweepJobTest, AnUnknownLayoutIsRefused)
+{
+    SweepSpec s = spec();
+    s.layout = "nope";
+    EXPECT_THROW(validateSweepSpec(registry_, dir(), s), std::invalid_argument);
+    s.layout = "stooq";
+    EXPECT_NO_THROW(validateSweepSpec(registry_, dir(), s));
+}
+
+TEST_F(SweepJobTest, TheChosenLayoutIsReallyUsed)
+{
+    SweepSpec s = spec();                                // x.txt is a Stooq file
+    s.layout = "stooq";
+    EXPECT_EQ(run(s).cells, 6u);
+    s.layout = "simple";
+    EXPECT_THROW(run(s), std::exception);
+    SweepSpec w = walkSpec();                            // rw.csv is a simple file
+    w.layout = "stooq";
+    EXPECT_THROW(run(w), std::exception);
+}

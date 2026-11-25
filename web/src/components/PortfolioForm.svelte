@@ -1,9 +1,10 @@
 <script>
+  import LayoutSelect from './LayoutSelect.svelte';
   import { defaultParams } from '../lib/params.js';
   import { newSleeve, sleeveErrors, portfolioError, totalCash, buildPortfolioRequest, MAX_SLEEVES } from '../lib/portfolio.js';
   import { num } from '../lib/format.js';
 
-  let { strategies, datasets, onsubmit } = $props();
+  let { strategies, datasets, layouts = [], onsubmit } = $props();
 
   let sleeves = $state([]);
   let commonPeriodOnly = $state(false);
@@ -72,6 +73,8 @@
         <div class="field">
           <label for={'p-ds-' + i}>Dataset</label>
           <select id={'p-ds-' + i} bind:value={sleeve.dataset}>{#each datasets as name}<option value={name}>{name}</option>{/each}</select>
+          <label for={'p-lo-' + i}>Layout</label>
+          <LayoutSelect id={'p-lo-' + i} {layouts} bind:value={sleeve.layout} showHint={false} />
         </div>
         <div class="field">
           <label for={'p-st-' + i}>Strategy</label>

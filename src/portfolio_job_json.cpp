@@ -77,12 +77,14 @@ PortfolioSpec portfolioSpecFromJson(const json& request)
     {
         if (!s.is_object())
             throw std::invalid_argument("each sleeve must be an object");
-        onlyKeys(s, {"name", "dataset", "strategy", "params", "cash"}, "a sleeve");
+        onlyKeys(s, {"name", "dataset", "strategy", "params", "cash", "layout"}, "a sleeve");
 
         PortfolioSleeve sleeve;
         sleeve.name = text(s, "name");
         sleeve.dataset = text(s, "dataset");
         sleeve.strategy = text(s, "strategy");
+        if (s.contains("layout"))
+            sleeve.layout = text(s, "layout");
         const json& cash = need(s, "cash");
         if (!cash.is_number())
             throw std::invalid_argument("\"cash\" must be a number");
@@ -108,7 +110,7 @@ json toJson(const PortfolioSpec& spec)
     json sleeves = json::array();
     for (const PortfolioSleeve& s : spec.sleeves)
         sleeves.push_back({{"name", s.name}, {"dataset", s.dataset}, {"strategy", s.strategy},
-                           {"params", paramsJson(s.params)}, {"cash", s.cash}});
+                           {"params", paramsJson(s.params)}, {"cash", s.cash}, {"layout", s.layout}});
     return {{"sleeves", sleeves}, {"commonPeriodOnly", spec.commonPeriodOnly}, {"periodsPerYear", spec.periodsPerYear}};
 }
 

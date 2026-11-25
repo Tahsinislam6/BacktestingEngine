@@ -89,6 +89,7 @@ export function buildSweepRequest(form) {
     cash: Number(form.cash),
     periodsPerYear: Number(form.periodsPerYear),
     note: form.note.trim(),
+    layout: form.layout || 'auto',
   };
 }
 

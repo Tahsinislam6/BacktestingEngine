@@ -12,7 +12,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Your code lives in a library so both the app and the tests can use it
-add_library(engine src/engine.cpp src/loader.cpp src/portfolio.cpp src/backtester.cpp src/timestamp.cpp src/aligned.cpp src/multi_backtester.cpp src/metrics.cpp src/swap.cpp src/density.cpp src/parameter_grid.cpp src/null_series.cpp src/sleeve.cpp src/single_asset.cpp src/registry.cpp src/buy_and_hold.cpp src/job.cpp src/job_json.cpp src/sweep_job.cpp src/sweep_job_json.cpp src/portfolio_job.cpp src/portfolio_job_json.cpp)
+add_library(engine src/engine.cpp src/loader.cpp src/portfolio.cpp src/backtester.cpp src/timestamp.cpp src/aligned.cpp src/multi_backtester.cpp src/metrics.cpp src/swap.cpp src/density.cpp src/parameter_grid.cpp src/null_series.cpp src/sleeve.cpp src/single_asset.cpp src/registry.cpp src/buy_and_hold.cpp src/layouts.cpp src/job.cpp src/job_json.cpp src/sweep_job.cpp src/sweep_job_json.cpp src/portfolio_job.cpp src/portfolio_job_json.cpp)
 target_include_directories(engine PUBLIC include)
 
 # JSON for the job runner (the request and result text the web app exchanges).

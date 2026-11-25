@@ -14,6 +14,11 @@ function formatter(digits) {
   return formatters.get(digits);
 }
 
+// A layout other than "auto", as text to add to a line (" · layout stooq"); nothing for auto and for runs saved before layouts.
+export function layoutText(layout) {
+  return layout && layout !== 'auto' ? ` · layout ${layout}` : '';
+}
+
 function isNumber(x) {
   return typeof x === 'number' && Number.isFinite(x);
 }

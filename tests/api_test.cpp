@@ -391,3 +391,58 @@ TEST_F(ApiTest, ACancelledQueuedRunShowsAsCancelled)
     EXPECT_EQ(call("POST", "/api/runs/" + busy + "/cancel").status, 202);   // running: stops at its next step
     EXPECT_EQ(waitFinished(busy).at("status"), "cancelled");
 }
+
+// ---- layouts ----
+
+TEST_F(ApiTest, LayoutsListsTheBuiltInsAndYourOwn)
+{
+    json doc = json::parse(call("GET", "/api/layouts").body);
+    ASSERT_EQ(doc.size(), 3u);
+    EXPECT_EQ(doc[0].at("name"), "auto");
+    EXPECT_EQ(doc[2].at("name"), "stooq");
+    std::ofstream(root_ / "data" / "layouts.json") << R"({ "mine": { "description": "my format" } })";
+    doc = json::parse(call("GET", "/api/layouts").body);
+    ASSERT_EQ(doc.size(), 4u);
+    EXPECT_EQ(doc[3].at("name"), "mine");
+    EXPECT_EQ(call("POST", "/api/layouts").status, 405);
+}
+
+TEST_F(ApiTest, ABrokenLayoutsFileIs500WithTheReason)
+{
+    std::ofstream(root_ / "data" / "layouts.json") << "{not json";
+    const HttpResponse r = call("GET", "/api/layouts");
+    EXPECT_EQ(r.status, 500);
+    EXPECT_NE(json::parse(r.body).at("error").get<std::string>().find("layouts.json"), std::string::npos);
+}
+
+TEST_F(ApiTest, ARunNamesItsLayoutAndAnUnknownOneIs400)
+{
+    const HttpResponse bad = call("POST", "/api/runs", R"({"strategy":"buy_and_hold","dataset":"x.txt","cash":1000,"layout":"nope"})");
+    EXPECT_EQ(bad.status, 400);
+    EXPECT_NE(json::parse(bad.body).at("error").get<std::string>().find("nope"), std::string::npos);
+
+    const HttpResponse good = call("POST", "/api/runs", R"({"strategy":"buy_and_hold","dataset":"x.txt","cash":1000,"layout":"stooq"})");
+    ASSERT_EQ(good.status, 202) << good.body;
+    const json doc = waitFinished(json::parse(good.body).at("id"));
+    EXPECT_EQ(doc.at("status"), "done");
+    EXPECT_EQ(doc.at("spec").at("layout"), "stooq");
+}
+
+TEST_F(ApiTest, ALayoutThatDoesNotFitMakesTheRunFailWithTheLoaderError)
+{
+    const HttpResponse r = call("POST", "/api/runs", R"({"strategy":"buy_and_hold","dataset":"x.txt","cash":1000,"layout":"simple"})");
+    ASSERT_EQ(r.status, 202) << r.body;
+    const json doc = waitFinished(json::parse(r.body).at("id"));
+    EXPECT_EQ(doc.at("status"), "failed");
+    EXPECT_FALSE(doc.at("error").get<std::string>().empty());
+}
+
+TEST_F(ApiTest, SweepsAndPortfoliosRefuseAnUnknownLayout)
+{
+    json sweep = json::parse(kSweepBody);
+    sweep["layout"] = "nope";
+    EXPECT_EQ(call("POST", "/api/sweeps", sweep.dump()).status, 400);
+    json pf = json::parse(kPortfolioBody);
+    pf["sleeves"][0]["layout"] = "nope";
+    EXPECT_EQ(call("POST", "/api/portfolios", pf.dump()).status, 400);
+}
