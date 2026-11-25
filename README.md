@@ -7,6 +7,16 @@ engine as a library.
 Build: `cmake -S . -B build && cmake --build build`. Tests: `./build/engine_tests`.
 Program: `./build/backtester <folder with .csv files>` loads the files, lines the assets up and says what it found.
 
+## Running a job without recompiling
+`./build/runner <data folder> <job.json>` (or `-` to read the job from standard input) runs one backtest and prints the
+result as JSON; `./build/runner <data folder> --list` prints the strategies with their parameters, and the datasets.
+
+    echo '{"strategy": "buy_and_hold", "dataset": "btc.v.txt", "params": {"fraction": 1}, "cash": 5000, "periodsPerYear": 365}' \
+      | ./build/runner ../data -
+
+Only `strategy` and `dataset` are required; any other unknown key is an error. A private project adds its own strategies
+with `registry.add(info, builder)` in its own `main()` and uses the same `runJobJson`, so no strategy has to live here.
+
 ## Using it from another project
 The CMake target `engine` is the library; its headers are in `include/`. From another project's CMakeLists.txt:
 
@@ -34,6 +44,7 @@ built when the engine is the top-level project.
 | Indicators | `indicators/core.hpp`, `indicators/atr.hpp` |
 | Parameter sweeps | `parameter_grid.*`: run any strategy over a grid of parameter values (any number of axes) and keep each run's metrics |
 | Parametric density | `density.*`: how much of the grid gives good results (pass density, plateau density, peak over neighbours, percentile) |
+| Job runner (for the web app) | `registry.*`: `StrategyRegistry`, the table of strategies a job can name, with each parameter's default and limits. `buy_and_hold.*`: the one built-in strategy (the baseline). `job.*`: `runJob` runs one backtest from a plain description (strategy, parameters, dataset file name, cash); `listDatasets` / `loadDataset` read a data folder (Stooq files and `timestamp,open,high,low,close` files). `job_json.*`: the same in JSON, the text the HTTP server and the web app will exchange |
 | Luck baseline | `null_series.*`: `shuffleReturns` makes a block-resampled copy of a series with the real order destroyed |
 
 Every part has its tests in `tests/`.

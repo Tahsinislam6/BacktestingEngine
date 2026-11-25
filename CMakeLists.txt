@@ -12,8 +12,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Your code lives in a library so both the app and the tests can use it
-add_library(engine src/engine.cpp src/loader.cpp src/portfolio.cpp src/backtester.cpp src/timestamp.cpp src/aligned.cpp src/multi_backtester.cpp src/metrics.cpp src/swap.cpp src/density.cpp src/parameter_grid.cpp src/null_series.cpp src/sleeve.cpp src/single_asset.cpp)
+add_library(engine src/engine.cpp src/loader.cpp src/portfolio.cpp src/backtester.cpp src/timestamp.cpp src/aligned.cpp src/multi_backtester.cpp src/metrics.cpp src/swap.cpp src/density.cpp src/parameter_grid.cpp src/null_series.cpp src/sleeve.cpp src/single_asset.cpp src/registry.cpp src/buy_and_hold.cpp src/job.cpp src/job_json.cpp)
 target_include_directories(engine PUBLIC include)
+
+# JSON for the job runner (the request and result text the web app exchanges).
+include(FetchContent)
+FetchContent_Declare(
+  json
+  URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+)
+FetchContent_MakeAvailable(json)
+target_link_libraries(engine PUBLIC nlohmann_json::nlohmann_json)
 
 # Everything below is only built when this is the top-level project. When another project pulls the engine in
 # (FetchContent / add_subdirectory) it gets just the `engine` library above, without our program and tests.
@@ -22,8 +31,11 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   add_executable(backtester src/main.cpp)
   target_link_libraries(backtester PRIVATE engine)
 
+  # Runs one job described in JSON (see src/runner_main.cpp)
+  add_executable(runner src/runner_main.cpp)
+  target_link_libraries(runner PRIVATE engine)
+
   # Google Test (downloaded automatically during the first configure)
-  include(FetchContent)
   FetchContent_Declare(
     googletest
     URL https://github.com/google/googletest/archive/refs/tags/v1.15.2.zip
