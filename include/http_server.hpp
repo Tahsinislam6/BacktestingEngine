@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "api.hpp"
 
@@ -38,6 +39,12 @@ struct ServerOptions
     std::string host{"127.0.0.1"};
     int port{8080};
 };
+
+// Reads the command line of a server program (without the program name):
+//   <data folder> <runs folder> [--web <folder>] [--port <n>]
+// into `options` and returns an empty string, or returns the message to print (and leaves `options` as it was). The port
+// must be a whole number from 1 to 65535. Shared by the engine's server and by private projects' servers.
+std::string parseServerArgs(const std::vector<std::string>& args, ServerOptions& options);
 
 // Builds the store, the manager, the handler and the server, prints the address and serves until Ctrl-C. Returns the exit
 // code. A private project calls this with a registry that has its own strategies added.

@@ -1,5 +1,7 @@
 #include "http_server.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <csignal>
 #include <filesystem>
 #include <iostream>
@@ -105,4 +107,44 @@ int runServer(const StrategyRegistry& registry, const ServerOptions& options)
         std::cerr << "error: " << e.what() << "\n";
         return 1;
     }
+}
+
+std::string parseServerArgs(const std::vector<std::string>& args, ServerOptions& options)
+{
+    const std::string usage = "Usage: <data folder> <runs folder> [--web <folder>] [--port <n>]";
+    ServerOptions parsed = options;
+    std::vector<std::string> folders;
+
+    for (std::size_t i = 0; i < args.size(); ++i)
+    {
+        const std::string& arg = args[i];
+        if (arg == "--web" || arg == "--port")
+        {
+            if (i + 1 >= args.size())
+                return arg + " needs a value. " + usage;
+            const std::string& value = args[++i];
+            if (arg == "--web")
+            {
+                parsed.webDir = value;
+                continue;
+            }
+            const bool digits = !value.empty() && value.size() <= 5 &&
+                                std::all_of(value.begin(), value.end(), [](unsigned char c) { return std::isdigit(c) != 0; });
+            const int port = digits ? std::stoi(value) : 0;
+            if (port < 1 || port > 65535)
+                return "the port must be a whole number from 1 to 65535, not \"" + value + "\"";
+            parsed.port = port;
+        }
+        else if (arg.rfind("--", 0) == 0)
+            return "unknown option " + arg + ". " + usage;
+        else
+            folders.push_back(arg);
+    }
+
+    if (folders.size() != 2)
+        return usage;
+    parsed.dataDir = folders[0];
+    parsed.runsDir = folders[1];
+    options = parsed;
+    return "";
 }

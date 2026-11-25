@@ -1,6 +1,6 @@
-#include <cstdlib>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include "buy_and_hold.hpp"
 #include "http_server.hpp"
@@ -15,25 +15,11 @@
 int main(int argc, char** argv)
 {
     ServerOptions options;
-    if (argc < 3)
+    const std::string error = parseServerArgs(std::vector<std::string>(argv + 1, argv + argc), options);
+    if (!error.empty())
     {
-        std::cerr << "Usage: server <data folder> <runs folder> [--web <folder>] [--port <n>]\n";
+        std::cerr << error << "\n";
         return 2;
-    }
-    options.dataDir = argv[1];
-    options.runsDir = argv[2];
-    for (int i = 3; i < argc; ++i)
-    {
-        const std::string flag = argv[i];
-        if (flag == "--web" && i + 1 < argc)
-            options.webDir = argv[++i];
-        else if (flag == "--port" && i + 1 < argc)
-            options.port = std::atoi(argv[++i]);
-        else
-        {
-            std::cerr << "unknown or incomplete option: " << flag << "\n";
-            return 2;
-        }
     }
 
     StrategyRegistry registry;
