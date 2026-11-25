@@ -40,7 +40,10 @@ calls `runServer(registry, options)` from its own `main()` after adding its stra
 ## The web app
 `web/` is a Svelte + Vite app (charts by ECharts) that talks to the server's API: pick a dataset and a strategy, fill in
 the parameters (the form is built from `/api/strategies`, with each parameter's limits checked as you type), run, and see
-the metrics, the equity curve with its drawdown, the trades and the history of every run. Node is only needed to build it.
+the metrics, the equity curve with its drawdown, the trades and the history of every run. The **Density sweep** tab runs a
+sweep (see below): you choose two axes and every setting of the test, must write your pass rule in a required note first,
+and get the real densities against the shuffled copies, a heatmap of the grid and a histogram of the copies. The history
+keeps a count of the ideas tried per dataset. Node is only needed to build it.
 
     cd web && npm install            # once
     npm test                         # the formatting, parameter and API-call logic

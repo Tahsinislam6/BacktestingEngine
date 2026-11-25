@@ -31,3 +31,13 @@ export async function postRun(spec) {
   });
   return body.id;
 }
+
+// Queues a density sweep and returns its id.
+export async function postSweep(spec) {
+  const body = await request('/api/sweeps', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(spec),
+  });
+  return body.id;
+}

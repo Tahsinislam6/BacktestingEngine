@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { getStrategies, getDatasets, postRun, getRun, getRuns } from '../src/lib/api.js';
+import { getStrategies, getDatasets, postRun, postSweep, getRun, getRuns } from '../src/lib/api.js';
 
 function reply(status, body) {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
@@ -29,6 +29,19 @@ describe('api', () => {
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body)).toEqual({ strategy: 'a', dataset: 'b' });
     expect(init.headers['Content-Type']).toBe('application/json');
+  });
+  it('POSTs a sweep to its own path and returns its id', async () => {
+    const fetchMock = vi.fn(async () => reply(202, { id: '000009' }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await postSweep({ strategy: 'a', note: 'n' })).toBe('000009');
+    const [path, init] = fetchMock.mock.calls[0];
+    expect(path).toBe('/api/sweeps');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ strategy: 'a', note: 'n' });
+  });
+  it('shows the server reason a sweep was refused', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => reply(400, { error: 'the note is required: write what you expect' })));
+    await expect(postSweep({})).rejects.toThrow('the note is required');
   });
   it("throws the server's own error text", async () => {
     vi.stubGlobal('fetch', vi.fn(async () => reply(400, { error: 'unknown strategy: nope' })));

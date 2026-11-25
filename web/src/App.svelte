@@ -1,9 +1,12 @@
 <script>
   import { onMount } from 'svelte';
-  import { getStrategies, getDatasets, getRuns, getRun, postRun } from './lib/api.js';
+  import { getStrategies, getDatasets, getRuns, getRun, postRun, postSweep } from './lib/api.js';
+  import { ideasByDataset } from './lib/sweep.js';
   import RunForm from './components/RunForm.svelte';
   import History from './components/History.svelte';
   import RunView from './components/RunView.svelte';
+  import SweepForm from './components/SweepForm.svelte';
+  import SweepView from './components/SweepView.svelte';
 
   let strategies = $state([]);
   let datasets = $state([]);
@@ -11,6 +14,10 @@
   let selected = $state(null);
   let loadError = $state('');
   let ready = $state(false);
+  let mode = $state('run');           // which form is showing: 'run' or 'sweep'
+
+  const ideasTried = $derived(ideasByDataset(runs));
+  const ideasTotal = $derived(Object.values(ideasTried).reduce((a, b) => a + b, 0));
 
   async function refreshRuns() {
     runs = await getRuns();
@@ -27,6 +34,12 @@
   // Called by the form; the form shows any error it throws.
   async function submit(request) {
     const id = await postRun(request);
+    await refreshRuns();
+    await select(id);
+  }
+
+  async function submitSweep(request) {
+    const id = await postSweep(request);
     await refreshRuns();
     await select(id);
   }
@@ -65,7 +78,7 @@
 <div class="shell">
   <header>
     <h1>Backtesting</h1>
-    <span class="muted">{runs.length} {runs.length === 1 ? 'run' : 'runs'} logged</span>
+    <span class="muted">{runs.length} {runs.length === 1 ? 'run' : 'runs'} logged · {ideasTotal.toLocaleString('en-US')} ideas tried</span>
   </header>
 
   {#if loadError}
@@ -74,11 +87,21 @@
 
   <main>
     <aside>
-      <RunForm {strategies} {datasets} onsubmit={submit} />
-      <History {runs} selectedId={selected?.id} onselect={select} />
+      <div class="tabs">
+        <button class:on={mode === 'run'} onclick={() => (mode = 'run')}>Single run</button>
+        <button class:on={mode === 'sweep'} onclick={() => (mode = 'sweep')}>Density sweep</button>
+      </div>
+      {#if mode === 'run'}
+        <RunForm {strategies} {datasets} onsubmit={submit} />
+      {:else}
+        <SweepForm {strategies} {datasets} {ideasTried} onsubmit={submitSweep} />
+      {/if}
+      <History {runs} selectedId={selected?.id} onselect={select} {ideasTried} />
     </aside>
     <section>
-      {#if selected}
+      {#if selected && selected.kind === 'sweep'}
+        <SweepView run={selected} />
+      {:else if selected}
         <RunView run={selected} />
       {:else if ready && !loadError}
         <div class="panel empty">
@@ -98,6 +121,11 @@
   main { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 20px; align-items: start; }
   aside { display: flex; flex-direction: column; gap: 20px; position: sticky; top: 16px; }
   section { min-width: 0; }
+  .tabs { display: flex; }
+  .tabs button { flex: 1; border-radius: 0; }
+  .tabs button:first-child { border-radius: 8px 0 0 8px; }
+  .tabs button:last-child { border-radius: 0 8px 8px 0; border-left: 0; }
+  .tabs button.on { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; font-weight: 600; }
   .empty { text-align: center; padding: 64px 24px; }
   .empty p { margin: 8px 0 0; }
   @media (max-width: 900px) {
