@@ -76,12 +76,19 @@ BarSeries loadDataset(const std::string& dataDir, const std::string& name)
     return isStooqFile(path) ? loadCsv(path, name, stooqLayout()) : loadCsv(path, name);
 }
 
-RunOutput runJob(const StrategyRegistry& registry, const std::string& dataDir, const RunSpec& spec)
+void validateSpec(const StrategyRegistry& registry, const std::string& dataDir, const RunSpec& spec)
 {
     if (!std::isfinite(spec.cash) || spec.cash <= 0.0)
         throw std::invalid_argument("cash must be above 0");
     if (!std::isfinite(spec.periodsPerYear) || spec.periodsPerYear <= 0.0)
         throw std::invalid_argument("periodsPerYear must be above 0");
+    registry.resolveParams(spec.strategy, spec.params);
+    resolveDataset(dataDir, spec.dataset);
+}
+
+RunOutput runJob(const StrategyRegistry& registry, const std::string& dataDir, const RunSpec& spec)
+{
+    validateSpec(registry, dataDir, spec);
 
     RunOutput out;
     out.spec = spec;

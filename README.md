@@ -17,6 +17,25 @@ result as JSON; `./build/runner <data folder> --list` prints the strategies with
 Only `strategy` and `dataset` are required; any other unknown key is an error. A private project adds its own strategies
 with `registry.add(info, builder)` in its own `main()` and uses the same `runJobJson`, so no strategy has to live here.
 
+## The local server
+`./build/server <data folder> <runs folder> [--web <folder>] [--port <n>]` serves the API on `127.0.0.1` (this computer
+only; the default port is 8080). With `--web` it also serves the built web app at `/`. Every run is saved as
+`<runs folder>/<id>.json`; ids count up (`000001`, `000002`, ...), so the folder is also the count of everything tried.
+
+| Request | Answer |
+|---|---|
+| `GET /api/strategies` | the strategies and their parameter schemas (default, min, max, integer) |
+| `GET /api/datasets` | the file names in the data folder |
+| `POST /api/runs` | `202 {"id": "000001"}`; the body is the same request the `runner` takes. A bad request is `400 {"error": ...}` |
+| `GET /api/runs/{id}` | the run: `status` (`queued`, `running`, `done`, `failed`), `spec`, and `result` or `error` |
+| `GET /api/runs` | one summary per run, newest first (headline metrics only) |
+
+    curl -X POST localhost:8080/api/runs -d '{"strategy": "buy_and_hold", "dataset": "btc.v.txt", "cash": 5000}'
+    curl localhost:8080/api/runs/000001
+
+A run found `queued` or `running` when the server starts was cut off by a stop and is marked `failed`. A private project
+calls `runServer(registry, options)` from its own `main()` after adding its strategies to the registry.
+
 ## Using it from another project
 The CMake target `engine` is the library; its headers are in `include/`. From another project's CMakeLists.txt:
 
@@ -45,6 +64,7 @@ built when the engine is the top-level project.
 | Parameter sweeps | `parameter_grid.*`: run any strategy over a grid of parameter values (any number of axes) and keep each run's metrics |
 | Parametric density | `density.*`: how much of the grid gives good results (pass density, plateau density, peak over neighbours, percentile) |
 | Job runner (for the web app) | `registry.*`: `StrategyRegistry`, the table of strategies a job can name, with each parameter's default and limits. `buy_and_hold.*`: the one built-in strategy (the baseline). `job.*`: `runJob` runs one backtest from a plain description (strategy, parameters, dataset file name, cash); `listDatasets` / `loadDataset` read a data folder (Stooq files and `timestamp,open,high,low,close` files). `job_json.*`: the same in JSON, the text the HTTP server and the web app will exchange |
+| Local web server | `run_store.*`: one JSON file per run in a folder (the log of everything run). `run_manager.*`: runs queued backtests one at a time on a worker thread. `api.*`: the whole HTTP API as one testable function. `http_server.*`: the socket layer (cpp-httplib) and `runServer` |
 | Luck baseline | `null_series.*`: `shuffleReturns` makes a block-resampled copy of a series with the real order destroyed |
 
 Every part has its tests in `tests/`.

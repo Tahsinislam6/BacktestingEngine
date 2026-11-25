@@ -42,6 +42,11 @@ struct RunOutput
     Metrics metrics;
 };
 
+// Everything about a request that can be checked without reading the dataset: cash and periodsPerYear above 0, a known
+// strategy with valid parameters, a dataset name that is a file in the folder. Throws std::invalid_argument. runJob calls
+// it first; the run manager calls it at submit time so a bad request is refused at once instead of failing later.
+void validateSpec(const StrategyRegistry& registry, const std::string& dataDir, const RunSpec& spec);
+
 // Fills in the default parameters, loads the dataset, runs the strategy and measures it.
 // Throws std::invalid_argument for an unknown strategy or parameter, a bad parameter value, a bad dataset name, or cash /
 // periodsPerYear that is not above 0; std::runtime_error if the dataset cannot be read or has no bars.

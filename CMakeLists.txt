@@ -24,12 +24,30 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(json)
 target_link_libraries(engine PUBLIC nlohmann_json::nlohmann_json)
 
+# The local web server (HTTP API). cpp-httplib is one header; no OpenSSL, zlib or brotli is wanted.
+set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_ZLIB_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_BROTLI_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_COMPILE OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+  httplib
+  URL https://github.com/yhirose/cpp-httplib/archive/refs/tags/v0.18.3.tar.gz
+)
+FetchContent_MakeAvailable(httplib)
+
+add_library(engine_server src/run_store.cpp src/run_manager.cpp src/api.cpp src/http_server.cpp)
+target_link_libraries(engine_server PUBLIC engine httplib::httplib)
+
 # Everything below is only built when this is the top-level project. When another project pulls the engine in
 # (FetchContent / add_subdirectory) it gets just the `engine` library above, without our program and tests.
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   # The program you run
   add_executable(backtester src/main.cpp)
   target_link_libraries(backtester PRIVATE engine)
+
+  # The local web server (see src/server_main.cpp)
+  add_executable(server src/server_main.cpp)
+  target_link_libraries(server PRIVATE engine_server)
 
   # Runs one job described in JSON (see src/runner_main.cpp)
   add_executable(runner src/runner_main.cpp)
@@ -45,7 +63,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   enable_testing()
   file(GLOB TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/tests/*_test.cpp)
   add_executable(engine_tests ${TEST_SOURCES})
-  target_link_libraries(engine_tests PRIVATE engine GTest::gtest_main)
+  target_link_libraries(engine_tests PRIVATE engine_server GTest::gtest_main)
   target_compile_definitions(engine_tests PRIVATE PROJECT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 
   include(GoogleTest)
