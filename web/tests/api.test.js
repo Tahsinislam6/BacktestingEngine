@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { getStrategies, getDatasets, postRun, postSweep, postPortfolio, getRun, getRuns } from '../src/lib/api.js';
+import { getStrategies, getDatasets, postRun, postSweep, postPortfolio, postCancel, getRun, getRuns } from '../src/lib/api.js';
 
 function reply(status, body) {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
@@ -38,6 +38,18 @@ describe('api', () => {
     expect(path).toBe('/api/sweeps');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body)).toEqual({ strategy: 'a', note: 'n' });
+  });
+  it('POSTs a cancel to the run and returns what the server said', async () => {
+    const fetchMock = vi.fn(async () => reply(202, { id: '000004', status: 'stopping' }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await postCancel('000004')).toEqual({ id: '000004', status: 'stopping' });
+    const [path, init] = fetchMock.mock.calls[0];
+    expect(path).toBe('/api/runs/000004/cancel');
+    expect(init.method).toBe('POST');
+  });
+  it('shows the server reason a cancel was refused', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => reply(409, { error: 'this run cannot be cancelled' })));
+    await expect(postCancel('000004')).rejects.toThrow('cannot be cancelled');
   });
   it('POSTs a portfolio to its own path and returns its id', async () => {
     const fetchMock = vi.fn(async () => reply(202, { id: '000011' }));

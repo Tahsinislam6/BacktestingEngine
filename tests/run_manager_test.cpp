@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -26,6 +28,9 @@ namespace fs = std::filesystem;
 //   4. A run found "queued" or "running" in the store when a manager starts was cut off by a stop: it becomes
 //      "failed" with an error that says so.
 //   5. Destroying a manager with work waiting does not hang.
+//   6. cancel(id): a queued run of any kind never runs and becomes "cancelled"; a running sweep stops at its next step and
+//      becomes "cancelled" (its ideas stay counted); a finished run, a running single run or portfolio, and an unknown id
+//      cannot be cancelled and are left alone.
 
 class RunManagerTest : public ::testing::Test
 {
@@ -168,6 +173,146 @@ TEST_F(RunManagerTest, DestroyingAManagerWithWorkWaitingDoesNotHang)
             manager.submit(spec());
     }
     SUCCEED();
+}
+
+// ---- cancelling ----
+
+static SweepSpec sweepSpec();                                // defined with the sweep tests below
+
+// A test strategy that holds its run still: it says it has started, then waits until the test lets it go.
+static std::atomic<bool> gateEntered{false};
+static std::atomic<bool> gateOpen{false};
+
+class GateStrategy : public Strategy
+{
+public:
+    std::vector<Order> onBar(const Bar&, const Portfolio&) override
+    {
+        gateEntered = true;
+        for (int i = 0; i < 2000 && !gateOpen; ++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        return {};
+    }
+};
+
+// A long sweep: a 20,000-bar walk, 16 cells and 1,000 shuffled copies, far more than the tests wait for.
+static SweepSpec longSweepSpec()
+{
+    SweepSpec s = sweepSpec();
+    s.dataset = "long.csv";
+    s.axes = {{"delay", 0, 3, 1}, {"size", 1, 4, 1}};
+    s.nullRuns = 1000;
+    return s;
+}
+
+static void writeLongWalk(const fs::path& file)
+{
+    std::ofstream out(file);
+    out << "timestamp,open,high,low,close\n";
+    std::uint64_t state = 99;
+    double price = 100.0;
+    for (int i = 0; i < 20000; ++i)
+    {
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        const double u = static_cast<double>(state >> 11) / 9007199254740992.0;
+        price *= 1.0 + (u - 0.5) * 0.02;
+        out << (1577836800000LL + 86400000LL * i) << "," << price << "," << price << "," << price << "," << price << "\n";
+    }
+}
+
+static RunRecord waitUntil(RunStore& store, const std::string& id, const std::string& status)
+{
+    for (int i = 0; i < 1000; ++i)
+    {
+        const auto r = store.load(id);
+        if (r && r->status == status)
+            return *r;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ADD_FAILURE() << "run " << id << " never became " << status;
+    return {};
+}
+
+TEST_F(RunManagerTest, ARunningSweepCanBeCancelledAndKeepsItsIdeasCounted)
+{
+    writeLongWalk(root_ / "data" / "long.csv");
+    RunStore store(runsDir());
+    RunManager manager(store, registry_, dataDir());
+    const std::string id = manager.submitSweep(longSweepSpec());
+    waitUntil(store, id, RunStatus::Running);
+
+    EXPECT_EQ(manager.cancel(id), CancelResult::Stopping);
+
+    const RunRecord r = waitUntil(store, id, RunStatus::Cancelled);
+    EXPECT_EQ(r.ideas, 16 * 1001);
+    EXPECT_TRUE(r.result.is_null());
+    EXPECT_FALSE(r.error.empty());
+}
+
+TEST_F(RunManagerTest, AQueuedRunIsCancelledAtOnceAndNeverRuns)
+{
+    writeLongWalk(root_ / "data" / "long.csv");
+    RunStore store(runsDir());
+    RunManager manager(store, registry_, dataDir());
+    const std::string busy = manager.submitSweep(longSweepSpec());
+    const std::string waiting = manager.submit(spec());
+    const std::string after = manager.submit(spec());
+    waitUntil(store, busy, RunStatus::Running);
+
+    EXPECT_EQ(manager.cancel(waiting), CancelResult::Cancelled);
+    EXPECT_EQ(store.load(waiting)->status, RunStatus::Cancelled);
+
+    manager.cancel(busy);
+    waitUntil(store, busy, RunStatus::Cancelled);
+    EXPECT_EQ(waitFinished(store, after).status, RunStatus::Done);      // the queue carries on past the cancelled one
+    EXPECT_EQ(store.load(waiting)->status, RunStatus::Cancelled);        // and the cancelled one never ran
+    EXPECT_TRUE(store.load(waiting)->result.is_null());
+}
+
+TEST_F(RunManagerTest, ASingleRunThatIsAlreadyRunningCannotBeCancelled)
+{
+    StrategyInfo info;
+    info.name = "gate";
+    info.description = "test strategy";
+    registry_.add(info, [](const NamedParams&) { return std::make_unique<GateStrategy>(); });
+    gateEntered = false;
+    gateOpen = false;
+
+    RunStore store(runsDir());
+    RunManager manager(store, registry_, dataDir());
+    RunSpec s = spec("six.txt");
+    s.strategy = "gate";
+    const std::string id = manager.submit(s);
+    for (int i = 0; i < 1000 && !gateEntered; ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    ASSERT_TRUE(gateEntered);
+
+    EXPECT_EQ(manager.cancel(id), CancelResult::NotCancellable);
+    gateOpen = true;
+    EXPECT_EQ(waitFinished(store, id).status, RunStatus::Done);          // it was not stopped
+}
+
+TEST_F(RunManagerTest, FinishedAndUnknownRunsCannotBeCancelled)
+{
+    RunStore store(runsDir());
+    RunManager manager(store, registry_, dataDir());
+    const std::string id = manager.submit(spec());
+    waitFinished(store, id);
+
+    EXPECT_EQ(manager.cancel(id), CancelResult::NotCancellable);
+    EXPECT_EQ(store.load(id)->status, RunStatus::Done);
+    EXPECT_EQ(manager.cancel("000999"), CancelResult::NotFound);
+    EXPECT_EQ(manager.cancel("../x"), CancelResult::NotFound);
+}
+
+TEST_F(RunManagerTest, ASweepThatFinishesBeforeTheCancelStaysDone)
+{
+    RunStore store(runsDir());
+    RunManager manager(store, registry_, dataDir());
+    const std::string id = manager.submitSweep(sweepSpec());
+    waitFinished(store, id);
+    EXPECT_EQ(manager.cancel(id), CancelResult::NotCancellable);
+    EXPECT_EQ(store.load(id)->status, RunStatus::Done);
 }
 
 // ---- sweeps: queued like runs, with progress and the count of ideas tried ----

@@ -157,9 +157,11 @@ std::size_t sweepIdeas(const StrategyRegistry&, const SweepSpec& spec)
 }
 
 SweepOutput runSweep(const StrategyRegistry& registry, const std::string& dataDir, const SweepSpec& request,
-                     const ProgressFn& progress, unsigned threads)
+                     const ProgressFn& progress, unsigned threads, const CancelFn& cancelled)
 {
     validateSweepSpec(registry, dataDir, request);
+    if (cancelled && cancelled())
+        throw JobCancelled();
 
     SweepOutput out;
     out.spec = resolveSweepSpec(registry, request);
@@ -224,6 +226,7 @@ SweepOutput runSweep(const StrategyRegistry& registry, const std::string& dataDi
 
     std::atomic<std::size_t> next{0};
     std::atomic<bool> failed{false};
+    std::atomic<bool> stoppedEarly{false};
     std::exception_ptr firstError;
     std::mutex errorMutex;
 
@@ -231,8 +234,13 @@ SweepOutput runSweep(const StrategyRegistry& registry, const std::string& dataDi
         for (;;)
         {
             const std::size_t k = next.fetch_add(1);
-            if (k >= copies || failed.load())
+            if (k >= copies || failed.load() || stoppedEarly.load())
                 return;
+            if (cancelled && cancelled())
+            {
+                stoppedEarly = true;
+                return;
+            }
             try
             {
                 const BarSeries copy = shuffleReturns(series, static_cast<std::uint64_t>(k + 1), spec.block);
@@ -260,6 +268,8 @@ SweepOutput runSweep(const StrategyRegistry& registry, const std::string& dataDi
         t.join();
     if (firstError)
         std::rethrow_exception(firstError);
+    if (stoppedEarly)
+        throw JobCancelled();
 
     out.nullPassMedian = percentile(out.nullPass, 0.5);
     out.nullPass95 = percentile(out.nullPass, 0.95);

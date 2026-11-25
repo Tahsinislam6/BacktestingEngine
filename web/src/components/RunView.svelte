@@ -2,6 +2,7 @@
   import Metrics from './Metrics.svelte';
   import EquityChart from './EquityChart.svelte';
   import TradesTable from './TradesTable.svelte';
+  import CancelButton from './CancelButton.svelte';
   import { whenText, num } from '../lib/format.js';
 
   let { run } = $props();
@@ -24,7 +25,10 @@
   </div>
 
   {#if run.status === 'queued' || run.status === 'running'}
-    <div class="panel waiting"><span class="spinner"></span> {run.status === 'queued' ? 'Waiting in the queue…' : 'Running…'}</div>
+    <div class="panel waiting"><span class="spinner"></span> {run.status === 'queued' ? 'Waiting in the queue…' : 'Running…'}
+      {#if run.status === 'queued'}<CancelButton id={run.id} />{/if}</div>
+  {:else if run.status === 'cancelled'}
+    <div class="panel waiting">This run was cancelled before it started, so it has no result.</div>
   {:else if run.status === 'failed'}
     <div class="error-box"><b>This run failed.</b> {run.error}</div>
   {:else if run.result}

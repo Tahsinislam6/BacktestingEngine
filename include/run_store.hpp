@@ -7,13 +7,14 @@
 
 #include <nlohmann/json.hpp>
 
-// The states of a run. A run is queued, then running, then done or failed.
+// The states of a run. A run is queued, then running, then done, failed or cancelled (stopped on request).
 namespace RunStatus
 {
     inline constexpr const char* Queued = "queued";
     inline constexpr const char* Running = "running";
     inline constexpr const char* Done = "done";
     inline constexpr const char* Failed = "failed";
+    inline constexpr const char* Cancelled = "cancelled";
 }
 
 // Everything kept about one run.

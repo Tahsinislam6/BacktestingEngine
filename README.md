@@ -29,6 +29,7 @@ only; the default port is 8080). With `--web` it also serves the built web app a
 | `POST /api/runs` | `202 {"id": "000001"}`; the body is the same request the `runner` takes. A bad request is `400 {"error": ...}` |
 | `POST /api/sweeps` | `202 {"id": ...}`; a density sweep (see below). A bad request is `400` |
 | `POST /api/portfolios` | `202 {"id": ...}`; a portfolio (see below). A bad request is `400` |
+| `POST /api/runs/{id}/cancel` | Cancels a run. A queued run of any kind is cancelled at once (`200`); a running sweep stops at its next step (`202`) and ends as `cancelled`. A finished run, or a single run or portfolio that is already running, is `409`; an unknown id is `404`. A cancelled sweep still counts as ideas tried |
 | `GET /api/runs/{id}` | the run: `status` (`queued`, `running`, `done`, `failed`), `spec`, and `result` or `error` |
 | `GET /api/runs` | one summary per run, newest first (headline metrics only) |
 

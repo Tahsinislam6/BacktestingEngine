@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { getStrategies, getDatasets, getRuns, getRun, postRun, postSweep, postPortfolio } from './lib/api.js';
+  import { isActive, isFinished } from './lib/status.js';
   import { ideasByDataset } from './lib/sweep.js';
   import RunForm from './components/RunForm.svelte';
   import History from './components/History.svelte';
@@ -64,7 +65,7 @@
 
   // While the selected run is queued or running, ask for it again until it is finished.
   const activeId = $derived(
-    selected && (selected.status === 'queued' || selected.status === 'running') ? selected.id : null,
+    selected && isActive(selected.status) ? selected.id : null,
   );
 
   $effect(() => {
@@ -74,7 +75,7 @@
       try {
         const latest = await getRun(id);
         if (selected?.id === id) selected = latest;
-        if (latest.status === 'done' || latest.status === 'failed') await refreshRuns();
+        if (isFinished(latest.status)) await refreshRuns();
       } catch {
         // a missed poll is not worth showing; the next one tries again
       }

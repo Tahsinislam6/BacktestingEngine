@@ -22,6 +22,10 @@ export const getDatasets = () => request('/api/datasets');
 export const getRuns = () => request('/api/runs');
 export const getRun = (id) => request(`/api/runs/${id}`);
 
+// Asks the server to cancel a run: a queued run is cancelled at once, a running sweep at its next step. Returns the server's
+// answer ({id, status}); throws with the server's reason if the run cannot be cancelled.
+export const postCancel = (id) => request(`/api/runs/${id}/cancel`, { method: 'POST' });
+
 // Queues a run and returns its id.
 export async function postRun(spec) {
   const body = await request('/api/runs', {

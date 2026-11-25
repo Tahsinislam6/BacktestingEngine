@@ -1,6 +1,7 @@
 <script>
   import SweepHeatmap from './SweepHeatmap.svelte';
   import NullHistogram from './NullHistogram.svelte';
+  import CancelButton from './CancelButton.svelte';
   import { whenText, num, pct } from '../lib/format.js';
 
   let { run } = $props();
@@ -31,18 +32,21 @@
   {#if run.status === 'queued' || run.status === 'running'}
     <div class="panel waiting">
       {#if run.status === 'queued'}
-        <span class="spinner"></span> Waiting in the queue…
+        <span class="spinner"></span> Waiting in the queue… <CancelButton id={run.id} />
       {:else}
         <div class="bar-wrap">
           <div class="bar"><div class="fill" style:width={`${(progress * 100).toFixed(1)}%`}></div></div>
           <span class="muted small">
             {run.progress ? `${run.progress.done} of ${run.progress.total} grids done` : 'Starting…'} (the real data, then each shuffled copy)
           </span>
+          <CancelButton id={run.id} />
         </div>
       {/if}
     </div>
   {:else if run.status === 'failed'}
     <div class="error-box"><b>This sweep failed.</b> {run.error}</div>
+  {:else if run.status === 'cancelled'}
+    <div class="panel waiting">This sweep was cancelled, so it has no result. Its {num(run.ideas, 0)} ideas still count as tried.</div>
   {:else if result}
     <div class="cards">
       <div class="card panel"><span class="label muted">Cells</span><span class="value mono">{num(result.real.validCells, 0)} / {num(result.cells, 0)}</span><span class="sub muted">valid / total</span></div>

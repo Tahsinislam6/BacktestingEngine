@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -97,7 +98,18 @@ SweepSpec resolveSweepSpec(const StrategyRegistry& registry, const SweepSpec& sp
 // cells x (1 + nullRuns), for a spec that passed validateSweepSpec.
 std::size_t sweepIdeas(const StrategyRegistry& registry, const SweepSpec& spec);
 
+// Thrown by a job that noticed it was cancelled and stopped before finishing.
+struct JobCancelled : std::runtime_error
+{
+    JobCancelled() : std::runtime_error("cancelled") {}
+};
+
+// Asked often by a long job; true means "stop now". It may be called from any thread.
+using CancelFn = std::function<bool()>;
+
 // Runs the sweep. `threads` copies run at once (0 = one per CPU core). Throws what validateSweepSpec throws, and
-// std::runtime_error if the dataset cannot be read or has no bars.
+// std::runtime_error if the dataset cannot be read or has no bars. If `cancelled` returns true the sweep stops at its next
+// step (before the real grid, or before the next shuffled copy) and throws JobCancelled; a sweep nobody cancels gives the
+// same result with or without the check.
 SweepOutput runSweep(const StrategyRegistry& registry, const std::string& dataDir, const SweepSpec& spec,
-                     const ProgressFn& progress = {}, unsigned threads = 0);
+                     const ProgressFn& progress = {}, unsigned threads = 0, const CancelFn& cancelled = {});

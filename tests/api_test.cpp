@@ -71,7 +71,7 @@ protected:
         for (int i = 0; i < 1000; ++i)
         {
             const json doc = json::parse(call("GET", "/api/runs/" + id).body);
-            if (doc.at("status") == "done" || doc.at("status") == "failed")
+            if (doc.at("status") == "done" || doc.at("status") == "failed" || doc.at("status") == "cancelled")
                 return doc;
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
@@ -347,4 +347,47 @@ TEST_F(ApiTest, TheListSummarisesAPortfolioWithoutItsCurves)
     EXPECT_TRUE(p.at("headline").contains("maxDrawdown"));
     EXPECT_FALSE(p.contains("result"));
     EXPECT_EQ(p.dump().find("\"equity\""), std::string::npos);
+}
+
+// ---- cancelling: POST /api/runs/{id}/cancel ----
+
+TEST_F(ApiTest, CancellingAFinishedRunIs409AndLeavesItDone)
+{
+    const std::string id = submitGoodRun();
+    waitFinished(id);
+    const HttpResponse r = call("POST", "/api/runs/" + id + "/cancel");
+    EXPECT_EQ(r.status, 409);
+    EXPECT_TRUE(json::parse(r.body).contains("error"));
+    EXPECT_EQ(json::parse(call("GET", "/api/runs/" + id).body).at("status"), "done");
+}
+
+TEST_F(ApiTest, CancellingAnUnknownOrBadIdIs404)
+{
+    EXPECT_EQ(call("POST", "/api/runs/000999/cancel").status, 404);
+    EXPECT_EQ(call("POST", "/api/runs/..%2Fx/cancel").status, 404);
+}
+
+TEST_F(ApiTest, CancelOnlyAcceptsPost)
+{
+    const std::string id = submitGoodRun();
+    EXPECT_EQ(call("GET", "/api/runs/" + id + "/cancel").status, 405);
+    EXPECT_EQ(call("GET", "/api/runs/" + id + "/nonsense").status, 404);
+}
+
+TEST_F(ApiTest, ACancelledQueuedRunShowsAsCancelled)
+{
+    // keep the worker busy so the next run is still waiting
+    std::ofstream out(root_ / "data" / "long.csv");
+    out << "timestamp,open,high,low,close\n";
+    for (int i = 0; i < 20000; ++i)
+        out << (1577836800000LL + 86400000LL * i) << "," << 100 + (i % 7) << "," << 100 + (i % 7) << "," << 100 + (i % 7) << "," << 100 + (i % 7) << "\n";
+    out.close();
+    const std::string busyBody = R"({"strategy":"scaled_hold","dataset":"long.csv","axes":[{"param":"delay","from":0,"to":3,"step":1},{"param":"size","from":1,"to":4,"step":1}],"metric":"total-return","threshold":0,"radius":1,"minTrades":0,"nullRuns":1000,"block":1,"cash":1000,"note":"x"})";
+    const std::string busy = json::parse(call("POST", "/api/sweeps", busyBody).body).at("id");
+    const std::string waiting = submitGoodRun();
+
+    EXPECT_EQ(call("POST", "/api/runs/" + waiting + "/cancel").status, 200);
+    EXPECT_EQ(json::parse(call("GET", "/api/runs/" + waiting).body).at("status"), "cancelled");
+    EXPECT_EQ(call("POST", "/api/runs/" + busy + "/cancel").status, 202);   // running: stops at its next step
+    EXPECT_EQ(waitFinished(busy).at("status"), "cancelled");
 }

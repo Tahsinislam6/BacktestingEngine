@@ -161,9 +161,31 @@ HttpResponse ApiHandler::route(const std::string& method, const std::string& pat
     const std::string runsPrefix = "/api/runs/";
     if (path.rfind(runsPrefix, 0) == 0)
     {
-        const std::string id = path.substr(runsPrefix.size());
+        std::string id = path.substr(runsPrefix.size());
+        const std::string cancelSuffix = "/cancel";
+        const bool isCancel = id.size() > cancelSuffix.size() &&
+                              id.compare(id.size() - cancelSuffix.size(), cancelSuffix.size(), cancelSuffix) == 0;
+        if (isCancel)
+            id.erase(id.size() - cancelSuffix.size());
         if (!RunStore::isValidId(id))
             return error(404, "no such run");
+        if (isCancel)
+        {
+            if (method != "POST")
+                return error(405, "use POST");
+            switch (manager_.cancel(id))
+            {
+                case CancelResult::Cancelled:
+                    return reply(200, json{{"id", id}, {"status", RunStatus::Cancelled}});
+                case CancelResult::Stopping:
+                    return reply(202, json{{"id", id}, {"status", "stopping"}});
+                case CancelResult::NotCancellable:
+                    return error(409, "this run cannot be cancelled: it has finished, or it is a single run or portfolio already running");
+                case CancelResult::NotFound:
+                    break;
+            }
+            return error(404, "no such run");
+        }
         if (method != "GET")
             return error(405, "use GET");
         const auto record = store_.load(id);

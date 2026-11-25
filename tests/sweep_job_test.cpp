@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -334,6 +335,30 @@ TEST_F(SweepJobTest, ProgressCountsTheRealGridAndEachCopy)
     for (std::size_t i = 1; i < calls.size(); ++i)
         EXPECT_GE(calls[i].first, calls[i - 1].first);
     EXPECT_EQ(calls.back().first, 4u);
+}
+
+TEST_F(SweepJobTest, ACancelledSweepThrowsJobCancelledAndStopsEarly)
+{
+    std::atomic<std::size_t> steps{0};
+    EXPECT_THROW(runSweep(registry_, dir(), spec(), [&](std::size_t, std::size_t) { ++steps; }, 1, [] { return true; }),
+                 JobCancelled);
+    EXPECT_EQ(steps.load(), 0u);                        // it noticed before doing anything
+}
+
+TEST_F(SweepJobTest, CancellingPartWayStopsTheRemainingCopies)
+{
+    std::atomic<std::size_t> steps{0};
+    EXPECT_THROW(runSweep(registry_, dir(), spec(), [&](std::size_t, std::size_t) { ++steps; }, 1,
+                          [&] { return steps.load() >= 2; }),
+                 JobCancelled);
+    EXPECT_EQ(steps.load(), 2u);                        // real grid + one copy, then it noticed
+}
+
+TEST_F(SweepJobTest, ASweepThatIsNotCancelledIsUnchangedByHavingACancelCheck)
+{
+    const SweepOutput plain = run(spec());
+    const SweepOutput checked = runSweep(registry_, dir(), spec(), {}, 1, [] { return false; });
+    EXPECT_EQ(toJson(plain).dump(), toJson(checked).dump());
 }
 
 TEST_F(SweepJobTest, CopiesThatTieTheRealResultCountAsAtOrAboveIt)

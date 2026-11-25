@@ -16,6 +16,15 @@
 // Runs backtests in the background. submit() returns an id at once; one worker thread then runs the queued requests
 // one at a time, in order, saving every state change in the store, so a caller just polls the store for the result.
 //
+// What cancel() did.
+enum class CancelResult
+{
+    Cancelled,          // it was waiting in the queue: it will never run and is "cancelled" now
+    Stopping,           // a sweep that is running was told to stop; it becomes "cancelled" at its next step
+    NotCancellable,     // finished already, or a single run or portfolio that is already running (they are short)
+    NotFound,           // no run with that id
+};
+
 // The store, the registry and the data folder must outlive the manager.
 class RunManager
 {
@@ -42,15 +51,21 @@ class RunManager
         // has kind "portfolio" and counts as one idea.
         std::string submitPortfolio(const PortfolioSpec& spec);
 
+        // Cancels a run that has not finished (see CancelResult). Never throws for a bad id.
+        CancelResult cancel(const std::string& id);
+
     private:
-        // One queued piece of work: it returns the result document and may report progress.
+        // One queued piece of work: it returns the result document and may report progress. A job that can be stopped
+        // while it runs (a sweep) checks the cancel function it is given.
+        using Work = std::function<nlohmann::json(const ProgressFn&, const CancelFn&)>;
         struct Job
         {
             std::string id;
-            std::function<nlohmann::json(const ProgressFn&)> work;
+            Work work;
+            bool stoppable{false};
         };
 
-        std::string enqueue(RunRecord record, std::function<nlohmann::json(const ProgressFn&)> work);
+        std::string enqueue(RunRecord record, Work work, bool stoppable);
         void workerLoop();
         void execute(const Job& job);
 
@@ -61,6 +76,9 @@ class RunManager
         std::mutex mutex_;
         std::condition_variable wake_;
         std::deque<Job> queue_;
+        std::string runningId_;             // the job the worker is on ("" if none)
+        bool runningStoppable_{false};
+        bool cancelRequested_{false};       // for the running job
         bool stopping_{false};
         std::thread worker_;        // last, so everything above exists before it starts
 };

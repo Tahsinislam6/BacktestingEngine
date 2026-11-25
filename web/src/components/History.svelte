@@ -69,5 +69,6 @@
   .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted); }
   .dot.done { background: var(--good); }
   .dot.failed { background: var(--bad); }
+  .dot.cancelled { background: var(--muted, #7d8590); }
   .dot.running, .dot.queued { background: var(--warn); }
 </style>

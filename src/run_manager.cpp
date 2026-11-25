@@ -47,7 +47,7 @@ RunManager::~RunManager()
     worker_.join();
 }
 
-std::string RunManager::enqueue(RunRecord record, std::function<nlohmann::json(const ProgressFn&)> work)
+std::string RunManager::enqueue(RunRecord record, Work work, bool stoppable)
 {
     record.id = store_.nextId();
     record.status = RunStatus::Queued;
@@ -56,7 +56,7 @@ std::string RunManager::enqueue(RunRecord record, std::function<nlohmann::json(c
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        queue_.push_back({record.id, std::move(work)});
+        queue_.push_back({record.id, std::move(work), stoppable});
     }
     wake_.notify_one();
     return record.id;
@@ -73,10 +73,10 @@ std::string RunManager::submit(const RunSpec& spec)
     record.kind = "run";
     record.ideas = 1;
     record.spec = toJson(resolved);
-    return enqueue(std::move(record), [this, resolved](const ProgressFn&)
+    return enqueue(std::move(record), [this, resolved](const ProgressFn&, const CancelFn&)
     {
         return toJson(runJob(registry_, dataDir_, resolved));
-    });
+    }, false);
 }
 
 std::string RunManager::submitSweep(const SweepSpec& spec)
@@ -89,10 +89,10 @@ std::string RunManager::submitSweep(const SweepSpec& spec)
     record.kind = "sweep";
     record.ideas = static_cast<int>(sweepIdeas(registry_, resolved));
     record.spec = toJson(resolved);
-    return enqueue(std::move(record), [this, resolved](const ProgressFn& progress)
+    return enqueue(std::move(record), [this, resolved](const ProgressFn& progress, const CancelFn& cancelled)
     {
-        return toJson(runSweep(registry_, dataDir_, resolved, progress));
-    });
+        return toJson(runSweep(registry_, dataDir_, resolved, progress, 0, cancelled));
+    }, true);
 }
 
 std::string RunManager::submitPortfolio(const PortfolioSpec& spec)
@@ -105,10 +105,39 @@ std::string RunManager::submitPortfolio(const PortfolioSpec& spec)
     record.kind = "portfolio";
     record.ideas = 1;
     record.spec = toJson(resolved);
-    return enqueue(std::move(record), [this, resolved](const ProgressFn&)
+    return enqueue(std::move(record), [this, resolved](const ProgressFn&, const CancelFn&)
     {
         return toJson(runPortfolio(registry_, dataDir_, resolved));
-    });
+    }, false);
+}
+
+CancelResult RunManager::cancel(const std::string& id)
+{
+    if (!RunStore::isValidId(id))
+        return CancelResult::NotFound;
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (auto it = queue_.begin(); it != queue_.end(); ++it)
+    {
+        if (it->id != id)
+            continue;
+        queue_.erase(it);
+        if (auto record = store_.load(id))
+        {
+            record->status = RunStatus::Cancelled;
+            record->error = "cancelled before it started";
+            store_.save(*record);
+        }
+        return CancelResult::Cancelled;
+    }
+    if (runningId_ == id)
+    {
+        if (!runningStoppable_)
+            return CancelResult::NotCancellable;
+        cancelRequested_ = true;
+        return CancelResult::Stopping;
+    }
+    return store_.load(id) ? CancelResult::NotCancellable : CancelResult::NotFound;
 }
 
 void RunManager::workerLoop()
@@ -123,8 +152,15 @@ void RunManager::workerLoop()
                 return;
             job = std::move(queue_.front());
             queue_.pop_front();
+            runningId_ = job.id;
+            runningStoppable_ = job.stoppable;
+            cancelRequested_ = false;
         }
         execute(job);
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            runningId_.clear();
+        }
     }
 }
 
@@ -151,8 +187,20 @@ void RunManager::execute(const Job& job)
             }
         };
 
-        record.result = job.work(progress);
+        const CancelFn cancelled = [this]
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            return cancelRequested_ || stopping_;
+        };
+        record.result = job.work(progress, cancelled);
         record.status = RunStatus::Done;
+    }
+    catch (const JobCancelled&)
+    {
+        record.id = job.id;
+        std::lock_guard<std::mutex> lock(mutex_);
+        record.status = RunStatus::Cancelled;
+        record.error = stopping_ ? "the server stopped before this run finished" : "cancelled by you";
     }
     catch (const std::exception& e)
     {
