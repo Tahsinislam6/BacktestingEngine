@@ -28,6 +28,7 @@ only; the default port is 8080). With `--web` it also serves the built web app a
 | `GET /api/datasets` | the file names in the data folder |
 | `POST /api/runs` | `202 {"id": "000001"}`; the body is the same request the `runner` takes. A bad request is `400 {"error": ...}` |
 | `POST /api/sweeps` | `202 {"id": ...}`; a density sweep (see below). A bad request is `400` |
+| `POST /api/portfolios` | `202 {"id": ...}`; a portfolio (see below). A bad request is `400` |
 | `GET /api/runs/{id}` | the run: `status` (`queued`, `running`, `done`, `failed`), `spec`, and `result` or `error` |
 | `GET /api/runs` | one summary per run, newest first (headline metrics only) |
 
@@ -68,6 +69,15 @@ The result is numbers only: the real pass, plateau and peak-over-neighbours dens
 history as the single runs (`kind: "sweep"`), reports its progress while it runs and is logged the same way. At most
 50,000 cells and 2,000,000 backtests per sweep.
 
+## Portfolios
+`POST /api/portfolios` is the job version of the research program `portfolio_run`: `sleeves` is a list of
+`{name, dataset, strategy, params, cash}`; every sleeve is one dataset with its own strategy settings and its own bucket of
+cash, and nothing moves between sleeves. A sleeve's name must be unique; two sleeves may use the same dataset under
+different names. Options: `commonPeriodOnly` (start on the first day every asset has data, otherwise a late asset sits in
+cash and dilutes the result) and `periodsPerYear`. The result has the combined and per-sleeve equity curves, each sleeve's
+metrics against its own cash, the portfolio's against the sum of the cash, and the trades tagged with their sleeve. A
+portfolio counts as one idea in the history. There are no spreads or swap yet.
+
 ## Using it from another project
 The CMake target `engine` is the library; its headers are in `include/`. From another project's CMakeLists.txt:
 
@@ -98,6 +108,7 @@ built when the engine is the top-level project.
 | Job runner (for the web app) | `registry.*`: `StrategyRegistry`, the table of strategies a job can name, with each parameter's default and limits. `buy_and_hold.*`: the one built-in strategy (the baseline). `job.*`: `runJob` runs one backtest from a plain description (strategy, parameters, dataset file name, cash); `listDatasets` / `loadDataset` read a data folder (Stooq files and `timestamp,open,high,low,close` files). `job_json.*`: the same in JSON, the text the HTTP server and the web app will exchange |
 | Local web server | `run_store.*`: one JSON file per run in a folder (the log of everything run). `run_manager.*`: runs queued backtests one at a time on a worker thread. `api.*`: the whole HTTP API as one testable function. `http_server.*`: the socket layer (cpp-httplib) and `runServer` |
 | Density sweep job | `sweep_job.*`: `runSweep` runs a strategy over a grid of two parameters on the real data and on shuffled copies (seeds 1..K, several at a time, same answer however many threads), and returns the real densities, the shuffled densities and the grid. `sweep_job_json.*`: the same in JSON |
+| Portfolio job | `portfolio_job.*`: `runPortfolio` runs several sleeves side by side (each one dataset with its own strategy, settings and cash; nothing moves between sleeves) and returns each sleeve's curve and metrics, the combined curve and metrics (against the sum of the cash) and the trades tagged by sleeve. `portfolio_job_json.*`: the same in JSON |
 | Luck baseline | `null_series.*`: `shuffleReturns` makes a block-resampled copy of a series with the real order destroyed |
 
 Every part has its tests in `tests/`.

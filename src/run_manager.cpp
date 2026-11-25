@@ -5,6 +5,7 @@
 #include <exception>
 
 #include "job_json.hpp"
+#include "portfolio_job_json.hpp"
 #include "sweep_job_json.hpp"
 
 namespace
@@ -91,6 +92,22 @@ std::string RunManager::submitSweep(const SweepSpec& spec)
     return enqueue(std::move(record), [this, resolved](const ProgressFn& progress)
     {
         return toJson(runSweep(registry_, dataDir_, resolved, progress));
+    });
+}
+
+std::string RunManager::submitPortfolio(const PortfolioSpec& spec)
+{
+    validatePortfolioSpec(registry_, dataDir_, spec);
+
+    const PortfolioSpec resolved = resolvePortfolioSpec(registry_, spec);
+
+    RunRecord record;
+    record.kind = "portfolio";
+    record.ideas = 1;
+    record.spec = toJson(resolved);
+    return enqueue(std::move(record), [this, resolved](const ProgressFn&)
+    {
+        return toJson(runPortfolio(registry_, dataDir_, resolved));
     });
 }
 

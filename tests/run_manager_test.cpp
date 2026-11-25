@@ -8,6 +8,7 @@
 
 #include "buy_and_hold.hpp"
 #include "run_manager.hpp"
+#include "portfolio_job.hpp"
 #include "sweep_job.hpp"
 #include "test_strategies.hpp"
 
@@ -258,4 +259,55 @@ TEST_F(RunManagerTest, RunsAndSweepsShareTheQueueAndTheIds)
     EXPECT_EQ(c, "000003");
     for (const auto& id : {a, b, c})
         EXPECT_EQ(waitFinished(store, id).status, RunStatus::Done) << id;
+}
+
+// ---- portfolios: queued like runs; one idea each ----
+
+static PortfolioSpec portfolioSpec()
+{
+    PortfolioSpec p;
+    p.sleeves = {{"a", "six.txt", "scaled_hold", {{"size", 2}}, 1000}, {"b", "six.txt", "scaled_hold", {{"size", 1}}, 500}};
+    return p;
+}
+
+TEST_F(RunManagerTest, APortfolioEndsDoneWithItsResultAndKind)
+{
+    RunStore store(runsDir());
+    RunManager manager(store, registry_, dataDir());
+
+    const RunRecord r = waitFinished(store, manager.submitPortfolio(portfolioSpec()));
+
+    EXPECT_EQ(r.status, RunStatus::Done);
+    EXPECT_EQ(r.kind, "portfolio");
+    EXPECT_EQ(r.ideas, 1);
+    EXPECT_EQ(r.spec.at("sleeves").size(), 2u);
+    EXPECT_NEAR(r.result.at("combined").at("finalEquity").get<double>(), 1000 + 2 * 50 + 500 + 50, 1e-9);
+}
+
+TEST_F(RunManagerTest, ABadPortfolioThrowsAndLeavesNothingBehind)
+{
+    RunStore store(runsDir());
+    RunManager manager(store, registry_, dataDir());
+
+    PortfolioSpec bad = portfolioSpec();
+    bad.sleeves[1].name = "a";
+    EXPECT_THROW(manager.submitPortfolio(bad), std::invalid_argument);
+    PortfolioSpec none;
+    EXPECT_THROW(manager.submitPortfolio(none), std::invalid_argument);
+
+    EXPECT_TRUE(store.list().empty());
+    EXPECT_EQ(manager.submitPortfolio(portfolioSpec()), "000001");
+}
+
+TEST_F(RunManagerTest, APortfolioThatFailsWhileRunningEndsFailed)
+{
+    RunStore store(runsDir());
+    RunManager manager(store, registry_, dataDir());
+    PortfolioSpec p = portfolioSpec();
+    p.sleeves[0].dataset = "empty.csv";
+
+    const RunRecord r = waitFinished(store, manager.submitPortfolio(p));
+
+    EXPECT_EQ(r.status, RunStatus::Failed);
+    EXPECT_NE(r.error.find("no bars"), std::string::npos) << r.error;
 }

@@ -21,6 +21,10 @@ nlohmann::json toJson(const RunSpec& spec);
 nlohmann::json toJson(const Metrics& metrics);
 nlohmann::json toJson(const RunOutput& output);
 
+// One trade as the result documents show it. A closed trade has the same fields plus exitTime, exitPrice, reason and pnl.
+nlohmann::json toJson(const Trade& trade);
+nlohmann::json toJson(const ClosedTrade& trade);
+
 // The strategies and their parameter schemas, for building forms: [{name, description, params: [{name, default, min,
 // max, integer, description}]}].
 nlohmann::json strategiesToJson(const StrategyRegistry& registry);

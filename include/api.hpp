@@ -21,6 +21,7 @@ struct HttpResponse
 //   GET  /api/datasets      200  ["file.txt", ...]
 //   POST /api/runs          202  {"id": "000001"}      the body is a run request (see job_json.hpp)
 //   POST /api/sweeps        202  {"id": "000002"}      a density sweep request (see sweep_job_json.hpp); the note is required
+//   POST /api/portfolios    202  {"id": "000003"}      a portfolio request (see portfolio_job_json.hpp)
 //   GET  /api/runs/{id}     200  the run record: id, status, createdAt, spec, and result or error
 //   GET  /api/runs          200  one summary per run or sweep, newest first (no equity curves, trades or grids)
 //

@@ -1,4 +1,5 @@
 #include "api.hpp"
+#include "portfolio_job_json.hpp"
 #include "sweep_job_json.hpp"
 
 #include <exception>
@@ -57,6 +58,19 @@ namespace
     }
 
     // The record without the equity curve, timestamps and trades: only the headline metrics.
+    // The numbers a portfolio is read by, without its curves or trades.
+    json portfolioHeadlineOf(const json& result)
+    {
+        const json& m = result.at("combined").at("metrics");
+        json h;
+        h["sleeves"] = result.at("sleeves").size();
+        h["cash"] = result.at("combined").at("cash");
+        h["finalEquity"] = result.at("combined").at("finalEquity");
+        for (const char* key : {"totalReturn", "cagr", "maxDrawdown", "mar", "sharpe", "trades"})
+            h[key] = m.at(key);
+        return h;
+    }
+
     json summaryJson(const RunRecord& r)
     {
         json j = {{"id", r.id}, {"status", r.status}, {"createdAt", r.createdAt}, {"spec", r.spec},
@@ -65,6 +79,8 @@ namespace
             j["metrics"] = r.result.at("metrics");
         if (r.kind == "sweep" && r.result.is_object() && r.result.contains("real"))
             j["headline"] = headlineOf(r.result);
+        if (r.kind == "portfolio" && r.result.is_object() && r.result.contains("combined"))
+            j["headline"] = portfolioHeadlineOf(r.result);
         if (!r.progress.is_null() && r.status != RunStatus::Done)
             j["progress"] = r.progress;
         if (!r.error.empty())
@@ -110,6 +126,16 @@ HttpResponse ApiHandler::route(const std::string& method, const std::string& pat
         if (request.is_discarded())
             throw std::invalid_argument("the request is not valid JSON");
         return reply(202, json{{"id", manager_.submitSweep(sweepSpecFromJson(request))}});
+    }
+
+    if (path == "/api/portfolios")
+    {
+        if (method != "POST")
+            return error(405, "use POST");
+        const json request = json::parse(body, nullptr, false);
+        if (request.is_discarded())
+            throw std::invalid_argument("the request is not valid JSON");
+        return reply(202, json{{"id", manager_.submitPortfolio(portfolioSpecFromJson(request))}});
     }
 
     if (path == "/api/runs")

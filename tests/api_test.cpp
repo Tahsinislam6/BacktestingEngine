@@ -284,3 +284,67 @@ TEST_F(ApiTest, TheListSummarisesASweepWithoutItsGrid)
     EXPECT_FALSE(sweep.contains("result"));
     EXPECT_EQ(sweep.dump().find("\"grid\""), std::string::npos);
 }
+
+// ---- portfolios: POST /api/portfolios 202 {"id"}; kind "portfolio" with a small summary in the list ----
+
+static const char* kPortfolioBody = R"({
+    "sleeves": [
+        {"name": "a", "dataset": "six.txt", "strategy": "scaled_hold", "params": {"size": 2}, "cash": 1000},
+        {"name": "b", "dataset": "six.txt", "strategy": "scaled_hold", "params": {"size": 1}, "cash": 500}],
+    "periodsPerYear": 365 })";
+
+TEST_F(ApiTest, PostingAPortfolioGivesAnIdAndItFinishes)
+{
+    const HttpResponse r = call("POST", "/api/portfolios", kPortfolioBody);
+    ASSERT_EQ(r.status, 202) << r.body;
+
+    const json doc = waitFinished(json::parse(r.body).at("id"));
+
+    EXPECT_EQ(doc.at("status"), "done");
+    EXPECT_EQ(doc.at("kind"), "portfolio");
+    EXPECT_EQ(doc.at("ideas").get<int>(), 1);
+    EXPECT_EQ(doc.at("result").at("sleeves").size(), 2u);
+    EXPECT_NEAR(doc.at("result").at("combined").at("finalEquity").get<double>(), 1650, 1e-9);
+}
+
+TEST_F(ApiTest, ABadPortfolioIs400AndSaysWhy)
+{
+    json duplicate = json::parse(kPortfolioBody);
+    duplicate["sleeves"][1]["name"] = "a";
+    HttpResponse r = call("POST", "/api/portfolios", duplicate.dump());
+    EXPECT_EQ(r.status, 400);
+    EXPECT_NE(json::parse(r.body).at("error").get<std::string>().find("a"), std::string::npos);
+
+    json missingDataset = json::parse(kPortfolioBody);
+    missingDataset["sleeves"][0]["dataset"] = "nope.txt";
+    EXPECT_EQ(call("POST", "/api/portfolios", missingDataset.dump()).status, 400);
+    EXPECT_EQ(call("POST", "/api/portfolios", R"({"sleeves": []})").status, 400);
+    EXPECT_EQ(call("POST", "/api/portfolios", "{not json").status, 400);
+    EXPECT_EQ(call("POST", "/api/portfolios", "").status, 400);
+    EXPECT_TRUE(store_->list().empty());
+}
+
+TEST_F(ApiTest, PortfoliosOnlyAcceptPost)
+{
+    EXPECT_EQ(call("GET", "/api/portfolios").status, 405);
+    EXPECT_EQ(call("DELETE", "/api/portfolios").status, 405);
+}
+
+TEST_F(ApiTest, TheListSummarisesAPortfolioWithoutItsCurves)
+{
+    waitFinished(json::parse(call("POST", "/api/portfolios", kPortfolioBody).body).at("id"));
+
+    const json list = json::parse(call("GET", "/api/runs").body);
+
+    ASSERT_EQ(list.size(), 1u);
+    const json& p = list[0];
+    EXPECT_EQ(p.at("kind"), "portfolio");
+    ASSERT_TRUE(p.contains("headline"));
+    EXPECT_EQ(p.at("headline").at("sleeves").get<int>(), 2);
+    EXPECT_DOUBLE_EQ(p.at("headline").at("cash").get<double>(), 1500);
+    EXPECT_NEAR(p.at("headline").at("finalEquity").get<double>(), 1650, 1e-9);
+    EXPECT_NEAR(p.at("headline").at("totalReturn").get<double>(), 0.1, 1e-9);
+    EXPECT_TRUE(p.at("headline").contains("maxDrawdown"));
+    EXPECT_FALSE(p.contains("result"));
+    EXPECT_EQ(p.dump().find("\"equity\""), std::string::npos);
+}

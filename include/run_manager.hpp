@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "job.hpp"
+#include "portfolio_job.hpp"
 #include "run_store.hpp"
 #include "sweep_job.hpp"
 
@@ -36,6 +37,10 @@ class RunManager
         // The same for a density sweep (validateSweepSpec; throws std::invalid_argument, and nothing is recorded). The record
         // has kind "sweep" and says how many ideas it tries, and its progress is saved while it runs.
         std::string submitSweep(const SweepSpec& spec);
+
+        // The same for a portfolio (validatePortfolioSpec; throws std::invalid_argument, and nothing is recorded). The record
+        // has kind "portfolio" and counts as one idea.
+        std::string submitPortfolio(const PortfolioSpec& spec);
 
     private:
         // One queued piece of work: it returns the result document and may report progress.

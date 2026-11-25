@@ -46,14 +46,46 @@ inline void registerScaledHold(StrategyRegistry& registry)
     });
 }
 
-// Six daily bars, closes 100, 110, 120, 130, 140, 150 (Stooq layout).
-inline void writeSixBars(const std::filesystem::path& file)
+// "round_trip": buys `size` units (1..4, default 1) on the first bar and sells them on the fourth (bar 3), so it closes exactly
+// one trade. On closes 100, 110, ... its profit is size * 30.
+class RoundTrip : public Strategy
+{
+public:
+    explicit RoundTrip(int size) : size_(size) {}
+
+    std::vector<Order> onBar(const Bar&, const Portfolio& portfolio) override
+    {
+        const int bar = seen_++;
+        if (bar == 0)
+            return { openOrder(Direction::Long, static_cast<double>(size_)) };
+        if (bar == 3 && !portfolio.openTrades().empty())
+            return { closeOrder(portfolio.openTrades().front().id) };
+        return {};
+    }
+
+private:
+    int size_;
+    int seen_{0};
+};
+
+inline void registerRoundTrip(StrategyRegistry& registry)
+{
+    StrategyInfo info;
+    info.name = "round_trip";
+    info.description = "test strategy";
+    info.params = {{"size", 1, 1, 4, true, "units bought"}};
+    registry.add(info, [](const NamedParams& p) { return std::make_unique<RoundTrip>(static_cast<int>(p.at("size"))); });
+}
+
+// Daily bars in the Stooq layout: `bars` of them from 2020-01-`firstDay` (days 1..9 only), the first close `firstClose` and
+// each close `step` more than the last. The default is six bars, closes 100, 110, 120, 130, 140, 150.
+inline void writeSixBars(const std::filesystem::path& file, int firstClose = 100, int step = 10, int firstDay = 1, int bars = 6)
 {
     std::ofstream out(file);
     out << "<TICKER>,<PER>,<DATE>,<TIME>,<OPEN>,<HIGH>,<LOW>,<CLOSE>,<VOL>,<OPENINT>\n";
-    for (int i = 0; i < 6; ++i)
+    for (int i = 0; i < bars; ++i)
     {
-        const int close = 100 + 10 * i;
-        out << "X,D,2020010" << (i + 1) << ",000000," << close << "," << close << "," << close << "," << close << ",0,0\n";
+        const int close = firstClose + step * i;
+        out << "X,D,2020010" << (firstDay + i) << ",000000," << close << "," << close << "," << close << "," << close << ",0,0\n";
     }
 }

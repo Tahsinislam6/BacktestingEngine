@@ -22,7 +22,7 @@ namespace
         return "signal";
     }
 
-    json tradeJson(const Trade& t)
+    json tradeFields(const Trade& t)
     {
         json j;
         j["id"] = t.id;
@@ -133,18 +133,26 @@ json toJson(const RunOutput& out)
 
     j["trades"] = json::array();
     for (const ClosedTrade& c : out.result.closedTrades)
-    {
-        json t = tradeJson(c.trade);
-        t["exitTime"] = c.exitTime;
-        t["exitPrice"] = c.exitPrice;
-        t["reason"] = reasonName(c.reason);
-        t["pnl"] = c.pnl;
-        j["trades"].push_back(t);
-    }
+        j["trades"].push_back(toJson(c));
     j["openTrades"] = json::array();
     for (const Trade& t : out.result.openTrades)
-        j["openTrades"].push_back(tradeJson(t));
+        j["openTrades"].push_back(toJson(t));
     return j;
+}
+
+json toJson(const Trade& trade)
+{
+    return tradeFields(trade);
+}
+
+json toJson(const ClosedTrade& c)
+{
+    json t = tradeFields(c.trade);
+    t["exitTime"] = c.exitTime;
+    t["exitPrice"] = c.exitPrice;
+    t["reason"] = reasonName(c.reason);
+    t["pnl"] = c.pnl;
+    return t;
 }
 
 json strategiesToJson(const StrategyRegistry& registry)
