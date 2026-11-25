@@ -93,13 +93,18 @@ export function buildSweepRequest(form) {
 }
 
 // Ideas tried on each dataset, from the run summaries: every cell of every sweep (real data and each copy) and every run.
-// A record from before the count existed is one idea.
+// A portfolio is one idea on each distinct dataset it uses. A record from before the count existed is one idea.
 export function ideasByDataset(runs) {
   const totals = {};
+  const add = (dataset, count) => {
+    if (dataset) totals[dataset] = (totals[dataset] ?? 0) + count;
+  };
   for (const r of runs) {
-    const dataset = r.spec?.dataset;
-    if (!dataset) continue;
-    totals[dataset] = (totals[dataset] ?? 0) + (r.ideas ?? 1);
+    if (r.kind === 'portfolio') {
+      for (const dataset of new Set((r.spec?.sleeves ?? []).map((s) => s.dataset))) add(dataset, 1);
+    } else {
+      add(r.spec?.dataset, r.ideas ?? 1);
+    }
   }
   return totals;
 }

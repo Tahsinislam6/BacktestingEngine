@@ -1,12 +1,14 @@
 <script>
   import { onMount } from 'svelte';
-  import { getStrategies, getDatasets, getRuns, getRun, postRun, postSweep } from './lib/api.js';
+  import { getStrategies, getDatasets, getRuns, getRun, postRun, postSweep, postPortfolio } from './lib/api.js';
   import { ideasByDataset } from './lib/sweep.js';
   import RunForm from './components/RunForm.svelte';
   import History from './components/History.svelte';
   import RunView from './components/RunView.svelte';
   import SweepForm from './components/SweepForm.svelte';
   import SweepView from './components/SweepView.svelte';
+  import PortfolioForm from './components/PortfolioForm.svelte';
+  import PortfolioView from './components/PortfolioView.svelte';
 
   let strategies = $state([]);
   let datasets = $state([]);
@@ -14,7 +16,7 @@
   let selected = $state(null);
   let loadError = $state('');
   let ready = $state(false);
-  let mode = $state('run');           // which form is showing: 'run' or 'sweep'
+  let mode = $state('run');           // which form is showing: 'run', 'sweep' or 'portfolio'
 
   const ideasTried = $derived(ideasByDataset(runs));
   const ideasTotal = $derived(Object.values(ideasTried).reduce((a, b) => a + b, 0));
@@ -34,6 +36,12 @@
   // Called by the form; the form shows any error it throws.
   async function submit(request) {
     const id = await postRun(request);
+    await refreshRuns();
+    await select(id);
+  }
+
+  async function submitPortfolio(request) {
+    const id = await postPortfolio(request);
     await refreshRuns();
     await select(id);
   }
@@ -90,17 +98,22 @@
       <div class="tabs">
         <button class:on={mode === 'run'} onclick={() => (mode = 'run')}>Single run</button>
         <button class:on={mode === 'sweep'} onclick={() => (mode = 'sweep')}>Density sweep</button>
+        <button class:on={mode === 'portfolio'} onclick={() => (mode = 'portfolio')}>Portfolio</button>
       </div>
       {#if mode === 'run'}
         <RunForm {strategies} {datasets} onsubmit={submit} />
-      {:else}
+      {:else if mode === 'sweep'}
         <SweepForm {strategies} {datasets} {ideasTried} onsubmit={submitSweep} />
+      {:else}
+        <PortfolioForm {strategies} {datasets} onsubmit={submitPortfolio} />
       {/if}
       <History {runs} selectedId={selected?.id} onselect={select} {ideasTried} />
     </aside>
     <section>
       {#if selected && selected.kind === 'sweep'}
         <SweepView run={selected} />
+      {:else if selected && selected.kind === 'portfolio'}
+        <PortfolioView run={selected} />
       {:else if selected}
         <RunView run={selected} />
       {:else if ready && !loadError}
@@ -122,9 +135,10 @@
   aside { display: flex; flex-direction: column; gap: 20px; position: sticky; top: 16px; }
   section { min-width: 0; }
   .tabs { display: flex; }
-  .tabs button { flex: 1; border-radius: 0; }
+  .tabs button { flex: 1; border-radius: 0; padding: 8px 6px; }
   .tabs button:first-child { border-radius: 8px 0 0 8px; }
-  .tabs button:last-child { border-radius: 0 8px 8px 0; border-left: 0; }
+  .tabs button:last-child { border-radius: 0 8px 8px 0; }
+  .tabs button + button { border-left: 0; }
   .tabs button.on { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; font-weight: 600; }
   .empty { text-align: center; padding: 64px 24px; }
   .empty p { margin: 8px 0 0; }

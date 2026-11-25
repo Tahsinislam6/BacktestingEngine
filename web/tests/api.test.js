@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { getStrategies, getDatasets, postRun, postSweep, getRun, getRuns } from '../src/lib/api.js';
+import { getStrategies, getDatasets, postRun, postSweep, postPortfolio, getRun, getRuns } from '../src/lib/api.js';
 
 function reply(status, body) {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
@@ -38,6 +38,19 @@ describe('api', () => {
     expect(path).toBe('/api/sweeps');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body)).toEqual({ strategy: 'a', note: 'n' });
+  });
+  it('POSTs a portfolio to its own path and returns its id', async () => {
+    const fetchMock = vi.fn(async () => reply(202, { id: '000011' }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await postPortfolio({ sleeves: [] })).toBe('000011');
+    const [path, init] = fetchMock.mock.calls[0];
+    expect(path).toBe('/api/portfolios');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ sleeves: [] });
+  });
+  it('shows the server reason a portfolio was refused', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => reply(400, { error: 'two sleeves are named BTC' })));
+    await expect(postPortfolio({})).rejects.toThrow('two sleeves are named BTC');
   });
   it('shows the server reason a sweep was refused', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => reply(400, { error: 'the note is required: write what you expect' })));

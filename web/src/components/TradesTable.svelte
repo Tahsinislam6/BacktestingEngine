@@ -1,7 +1,8 @@
 <script>
   import { dateOf, num } from '../lib/format.js';
+  import { tradeKey } from '../lib/portfolio.js';
 
-  let { trades, openTrades } = $props();
+  let { trades, openTrades, showSleeve = false } = $props();
 
   const LIMIT = 200;
   let showAll = $state(false);
@@ -19,11 +20,12 @@
     <div class="scroll">
       <table class="mono">
         <thead>
-          <tr><th>Side</th><th>Entry</th><th>Exit</th><th class="r">Entry price</th><th class="r">Exit price</th><th class="r">P&amp;L</th><th>Reason</th></tr>
+          <tr>{#if showSleeve}<th>Sleeve</th>{/if}<th>Side</th><th>Entry</th><th>Exit</th><th class="r">Entry price</th><th class="r">Exit price</th><th class="r">P&amp;L</th><th>Reason</th></tr>
         </thead>
         <tbody>
-          {#each openTrades as t (t.id)}
+          {#each openTrades as t (tradeKey(t))}
             <tr>
+              {#if showSleeve}<td>{t.sleeve}</td>{/if}
               <td class={t.direction}>{t.direction}</td>
               <td>{dateOf(t.entryTime)}</td>
               <td><span class="open">open</span></td>
@@ -33,8 +35,9 @@
               <td class="muted">still open</td>
             </tr>
           {/each}
-          {#each shown as t (t.id)}
+          {#each shown as t (tradeKey(t))}
             <tr>
+              {#if showSleeve}<td>{t.sleeve}</td>{/if}
               <td class={t.direction}>{t.direction}</td>
               <td>{dateOf(t.entryTime)}</td>
               <td>{dateOf(t.exitTime)}</td>

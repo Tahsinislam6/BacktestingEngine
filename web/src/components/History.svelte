@@ -17,11 +17,15 @@
           <button class:active={r.id === selectedId} onclick={() => onselect(r.id)}>
             <span class="dot {r.status}" title={r.status}></span>
             <span class="main">
-              <span class="title">#{r.id} · {r.spec.strategy}{#if r.kind === 'sweep'} <span class="tag">sweep</span>{/if}</span>
-              <span class="sub muted">{r.spec.dataset} · {whenText(r.createdAt)}</span>
+              <span class="title">#{r.id} · {r.kind === 'portfolio' ? 'portfolio' : r.spec.strategy}{#if r.kind === 'sweep'} <span class="tag">sweep</span>{/if}</span>
+              <span class="sub muted">{r.kind === 'portfolio' ? `${r.spec.sleeves.length} sleeves` : r.spec.dataset} · {whenText(r.createdAt)}</span>
             </span>
             {#if r.status === 'done' && r.kind === 'sweep' && r.headline}
               <span class="mono ret muted" title="plateau density of the real data">plateau {pct(r.headline.plateauDensity, 0)}</span>
+            {:else if r.status === 'done' && r.kind === 'portfolio' && r.headline}
+              <span class="mono ret" class:pos={r.headline.totalReturn > 0} class:neg={r.headline.totalReturn < 0}>
+                {pct(r.headline.totalReturn, 0)}
+              </span>
             {:else if r.status === 'done'}
               <span class="mono ret" class:pos={r.metrics?.totalReturn > 0} class:neg={r.metrics?.totalReturn < 0}>
                 {pct(r.metrics?.totalReturn, 0)}

@@ -44,7 +44,9 @@ the parameters (the form is built from `/api/strategies`, with each parameter's 
 the metrics, the equity curve with its drawdown, the trades and the history of every run. The **Density sweep** tab runs a
 sweep (see below): you choose two axes and every setting of the test, must write your pass rule in a required note first,
 and get the real densities against the shuffled copies, a heatmap of the grid and a histogram of the copies. The history
-keeps a count of the ideas tried per dataset. Node is only needed to build it.
+keeps a count of the ideas tried per dataset. The **Portfolio** tab runs several sleeves side by side (add a sleeve per
+dataset, each with its own strategy, settings and cash) and shows each sleeve and the whole portfolio in a table, the
+sleeves' equity stacked with the portfolio's drawdown, and the trades by sleeve. Node is only needed to build it.
 
     cd web && npm install            # once
     npm test                         # the formatting, parameter and API-call logic

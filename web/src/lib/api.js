@@ -41,3 +41,13 @@ export async function postSweep(spec) {
   });
   return body.id;
 }
+
+// Queues a portfolio and returns its id.
+export async function postPortfolio(spec) {
+  const body = await request('/api/portfolios', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(spec),
+  });
+  return body.id;
+}
