@@ -1,4 +1,5 @@
 #include "api.hpp"
+#include "sweep_job_json.hpp"
 
 #include <exception>
 #include <stdexcept>
@@ -22,20 +23,50 @@ namespace
 
     json recordJson(const RunRecord& r)
     {
-        json j = {{"id", r.id}, {"status", r.status}, {"createdAt", r.createdAt}, {"spec", r.spec}};
+        json j = {{"id", r.id}, {"status", r.status}, {"createdAt", r.createdAt}, {"spec", r.spec},
+                  {"kind", r.kind}, {"ideas", r.ideas}};
         if (!r.result.is_null())
             j["result"] = r.result;
+        if (!r.progress.is_null())
+            j["progress"] = r.progress;
         if (!r.error.empty())
             j["error"] = r.error;
         return j;
     }
 
+    // The numbers a sweep is judged by, without its grid or its shuffled values.
+    json headlineOf(const json& result)
+    {
+        json h;
+        const json& real = result.at("real");
+        const json& plateau = result.at("shuffled").at("plateauDensity");
+        const json& pass = result.at("shuffled").at("passDensity");
+        h["cells"] = result.at("cells");
+        h["validCells"] = real.at("validCells");
+        h["passDensity"] = real.at("passDensity");
+        h["plateauDensity"] = real.at("plateauDensity");
+        h["peakOverNeighbours"] = real.at("peakOverNeighbours");
+        h["shuffledRuns"] = result.at("shuffled").at("runs");
+        h["shuffledPassMedian"] = pass.at("median");
+        h["shuffledPass95"] = pass.at("p95");
+        h["shuffledPassAtLeastReal"] = pass.at("atLeastReal");
+        h["shuffledPlateauMedian"] = plateau.at("median");
+        h["shuffledPlateau95"] = plateau.at("p95");
+        h["shuffledPlateauAtLeastReal"] = plateau.at("atLeastReal");
+        return h;
+    }
+
     // The record without the equity curve, timestamps and trades: only the headline metrics.
     json summaryJson(const RunRecord& r)
     {
-        json j = {{"id", r.id}, {"status", r.status}, {"createdAt", r.createdAt}, {"spec", r.spec}};
+        json j = {{"id", r.id}, {"status", r.status}, {"createdAt", r.createdAt}, {"spec", r.spec},
+                  {"kind", r.kind}, {"ideas", r.ideas}};
         if (r.result.is_object() && r.result.contains("metrics"))
             j["metrics"] = r.result.at("metrics");
+        if (r.kind == "sweep" && r.result.is_object() && r.result.contains("real"))
+            j["headline"] = headlineOf(r.result);
+        if (!r.progress.is_null() && r.status != RunStatus::Done)
+            j["progress"] = r.progress;
         if (!r.error.empty())
             j["error"] = r.error;
         return j;
@@ -70,6 +101,16 @@ HttpResponse ApiHandler::route(const std::string& method, const std::string& pat
 
     if (path == "/api/datasets")
         return method == "GET" ? reply(200, listDatasets(dataDir_)) : error(405, "use GET");
+
+    if (path == "/api/sweeps")
+    {
+        if (method != "POST")
+            return error(405, "use POST");
+        const json request = json::parse(body, nullptr, false);
+        if (request.is_discarded())
+            throw std::invalid_argument("the request is not valid JSON");
+        return reply(202, json{{"id", manager_.submitSweep(sweepSpecFromJson(request))}});
+    }
 
     if (path == "/api/runs")
     {

@@ -8,6 +8,8 @@
 
 #include "buy_and_hold.hpp"
 #include "run_manager.hpp"
+#include "sweep_job.hpp"
+#include "test_strategies.hpp"
 
 namespace fs = std::filesystem;
 
@@ -34,6 +36,8 @@ protected:
         fs::remove_all(root_);
         fs::create_directories(root_ / "data");
         registerBuiltins(registry_);
+        registerScaledHold(registry_);
+        writeSixBars(root_ / "data" / "six.txt");
         std::ofstream(root_ / "data" / "x.txt") <<
             "<TICKER>,<PER>,<DATE>,<TIME>,<OPEN>,<HIGH>,<LOW>,<CLOSE>,<VOL>,<OPENINT>\n"
             "X,D,20200101,000000,100,100,100,100,0,0\n"
@@ -163,4 +167,95 @@ TEST_F(RunManagerTest, DestroyingAManagerWithWorkWaitingDoesNotHang)
             manager.submit(spec());
     }
     SUCCEED();
+}
+
+// ---- sweeps: queued like runs, with progress and the count of ideas tried ----
+
+static SweepSpec sweepSpec()
+{
+    SweepSpec s;
+    s.strategy = "scaled_hold";
+    s.dataset = "six.txt";
+    s.axes = {{"delay", 0, 2, 1}, {"size", 1, 2, 1}};
+    s.metric = "total-return";
+    s.threshold = 0.055;
+    s.radius = 1;
+    s.minTrades = 0;
+    s.nullRuns = 3;
+    s.block = 1;
+    s.cash = 1000;
+    s.note = "pass rule";
+    return s;
+}
+
+TEST_F(RunManagerTest, ASweepEndsDoneWithItsResultKindIdeasAndProgress)
+{
+    RunStore store(runsDir());
+    RunManager manager(store, registry_, dataDir());
+
+    const RunRecord r = waitFinished(store, manager.submitSweep(sweepSpec()));
+
+    EXPECT_EQ(r.status, RunStatus::Done);
+    EXPECT_EQ(r.kind, "sweep");
+    EXPECT_EQ(r.ideas, 24);                                  // 6 cells x (1 real + 3 shuffled)
+    EXPECT_EQ(r.spec.at("note"), "pass rule");
+    EXPECT_EQ(r.result.at("cells").get<int>(), 6);
+    EXPECT_EQ(r.result.at("ideasTried").get<int>(), 24);
+    EXPECT_EQ(r.progress.at("done"), r.progress.at("total"));
+    EXPECT_EQ(r.progress.at("total").get<int>(), 4);
+}
+
+TEST_F(RunManagerTest, ARunIsKindRunWithOneIdea)
+{
+    RunStore store(runsDir());
+    RunManager manager(store, registry_, dataDir());
+    const RunRecord r = waitFinished(store, manager.submit(spec()));
+    EXPECT_EQ(r.kind, "run");
+    EXPECT_EQ(r.ideas, 1);
+}
+
+TEST_F(RunManagerTest, ABadSweepThrowsAndLeavesNothingBehind)
+{
+    RunStore store(runsDir());
+    RunManager manager(store, registry_, dataDir());
+
+    SweepSpec noNote = sweepSpec();
+    noNote.note = "";
+    EXPECT_THROW(manager.submitSweep(noNote), std::invalid_argument);
+    SweepSpec bad = sweepSpec();
+    bad.axes[0].to = 9;
+    EXPECT_THROW(manager.submitSweep(bad), std::invalid_argument);
+
+    EXPECT_TRUE(store.list().empty());
+    EXPECT_EQ(manager.submitSweep(sweepSpec()), "000001");
+}
+
+TEST_F(RunManagerTest, ASweepThatFailsWhileRunningEndsFailedAndStillCountsItsIdeas)
+{
+    RunStore store(runsDir());
+    RunManager manager(store, registry_, dataDir());
+    SweepSpec s = sweepSpec();
+    s.dataset = "empty.csv";
+
+    const RunRecord r = waitFinished(store, manager.submitSweep(s));
+
+    EXPECT_EQ(r.status, RunStatus::Failed);
+    EXPECT_NE(r.error.find("no bars"), std::string::npos) << r.error;
+    EXPECT_EQ(r.ideas, 24);                                  // an idea started is an idea tried
+}
+
+TEST_F(RunManagerTest, RunsAndSweepsShareTheQueueAndTheIds)
+{
+    RunStore store(runsDir());
+    RunManager manager(store, registry_, dataDir());
+
+    const std::string a = manager.submit(spec());
+    const std::string b = manager.submitSweep(sweepSpec());
+    const std::string c = manager.submit(spec());
+
+    EXPECT_EQ(a, "000001");
+    EXPECT_EQ(b, "000002");
+    EXPECT_EQ(c, "000003");
+    for (const auto& id : {a, b, c})
+        EXPECT_EQ(waitFinished(store, id).status, RunStatus::Done) << id;
 }

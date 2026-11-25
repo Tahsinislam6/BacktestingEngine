@@ -27,6 +27,7 @@ only; the default port is 8080). With `--web` it also serves the built web app a
 | `GET /api/strategies` | the strategies and their parameter schemas (default, min, max, integer) |
 | `GET /api/datasets` | the file names in the data folder |
 | `POST /api/runs` | `202 {"id": "000001"}`; the body is the same request the `runner` takes. A bad request is `400 {"error": ...}` |
+| `POST /api/sweeps` | `202 {"id": ...}`; a density sweep (see below). A bad request is `400` |
 | `GET /api/runs/{id}` | the run: `status` (`queued`, `running`, `done`, `failed`), `spec`, and `result` or `error` |
 | `GET /api/runs` | one summary per run, newest first (headline metrics only) |
 
@@ -48,6 +49,21 @@ the metrics, the equity curve with its drawdown, the trades and the history of e
 
 While working on the app, run the server (without `--web`) and `npm run dev` in `web/`: the page is at
 http://localhost:5173 and `/api` is forwarded to the server on port 8080.
+
+## Density sweeps
+`POST /api/sweeps` runs the density test of the research program `density_sweep` without recompiling: the strategy over a
+grid of two of its parameters, on the real data and on K shuffled copies of it. Every choice that can change the result
+is part of the request, and none is picked for you: `strategy`, `dataset`, `axes` (two, each `param`, `from`, `to`,
+`step`), `metric` (`mar`, `cagr`, `sharpe`, `sortino`, `total-return`, `profit-factor`, `expectancy`), `threshold`,
+`radius`, `minTrades`, `nullRuns`, `block` and a **`note`** that says what you expect and what counts as a pass: the
+request is refused without it. `params` (fixed values for the parameters that are not swept), `cash` and
+`periodsPerYear` are optional. Every axis value is checked against the parameter's limits before anything runs.
+
+The result is numbers only: the real pass, plateau and peak-over-neighbours densities, the shuffled densities (median,
+95th percentile, how many copies reached the real value, every copy's value), one metric per cell, and **ideas tried**
+(cells x (1 + K)). Whether it counts as a pass is for you to judge against your own note. A sweep appears in the same
+history as the single runs (`kind: "sweep"`), reports its progress while it runs and is logged the same way. At most
+50,000 cells and 2,000,000 backtests per sweep.
 
 ## Using it from another project
 The CMake target `engine` is the library; its headers are in `include/`. From another project's CMakeLists.txt:
@@ -78,6 +94,7 @@ built when the engine is the top-level project.
 | Parametric density | `density.*`: how much of the grid gives good results (pass density, plateau density, peak over neighbours, percentile) |
 | Job runner (for the web app) | `registry.*`: `StrategyRegistry`, the table of strategies a job can name, with each parameter's default and limits. `buy_and_hold.*`: the one built-in strategy (the baseline). `job.*`: `runJob` runs one backtest from a plain description (strategy, parameters, dataset file name, cash); `listDatasets` / `loadDataset` read a data folder (Stooq files and `timestamp,open,high,low,close` files). `job_json.*`: the same in JSON, the text the HTTP server and the web app will exchange |
 | Local web server | `run_store.*`: one JSON file per run in a folder (the log of everything run). `run_manager.*`: runs queued backtests one at a time on a worker thread. `api.*`: the whole HTTP API as one testable function. `http_server.*`: the socket layer (cpp-httplib) and `runServer` |
+| Density sweep job | `sweep_job.*`: `runSweep` runs a strategy over a grid of two parameters on the real data and on shuffled copies (seeds 1..K, several at a time, same answer however many threads), and returns the real densities, the shuffled densities and the grid. `sweep_job_json.*`: the same in JSON |
 | Luck baseline | `null_series.*`: `shuffleReturns` makes a block-resampled copy of a series with the real order destroyed |
 
 Every part has its tests in `tests/`.

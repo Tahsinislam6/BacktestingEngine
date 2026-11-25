@@ -24,6 +24,10 @@ namespace
             j["result"] = r.result;
         if (!r.error.empty())
             j["error"] = r.error;
+        j["kind"] = r.kind;
+        j["ideas"] = r.ideas;
+        if (!r.progress.is_null())
+            j["progress"] = r.progress;
         return j;
     }
 
@@ -39,6 +43,12 @@ namespace
             r.result = j.at("result");
         if (j.contains("error"))
             r.error = j.at("error").get<std::string>();
+        if (j.contains("kind"))                     // files from before sweeps existed have none: a plain run of one idea
+            r.kind = j.at("kind").get<std::string>();
+        if (j.contains("ideas"))
+            r.ideas = j.at("ideas").get<int>();
+        if (j.contains("progress"))
+            r.progress = j.at("progress");
         return r;
     }
 

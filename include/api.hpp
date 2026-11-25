@@ -20,8 +20,9 @@ struct HttpResponse
 //   GET  /api/strategies    200  the strategies with their parameter schemas
 //   GET  /api/datasets      200  ["file.txt", ...]
 //   POST /api/runs          202  {"id": "000001"}      the body is a run request (see job_json.hpp)
+//   POST /api/sweeps        202  {"id": "000002"}      a density sweep request (see sweep_job_json.hpp); the note is required
 //   GET  /api/runs/{id}     200  the run record: id, status, createdAt, spec, and result or error
-//   GET  /api/runs          200  one summary per run, newest first (no equity curves or trades)
+//   GET  /api/runs          200  one summary per run or sweep, newest first (no equity curves, trades or grids)
 //
 // Every error is {"error": "text"}: 400 bad request, 404 unknown path or run, 405 wrong method, 500 anything unexpected.
 // The registry, store and manager must outlive the handler.

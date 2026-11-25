@@ -190,3 +190,23 @@ TEST(ToDensityGrid, ANotANumberMetricIsInvalid)
     EXPECT_FALSE(d.valid[0]);   // expectancy 10 -> NaN
     EXPECT_TRUE(d.valid[1]);    // expectancy 20
 }
+
+// sweep() measures every run with the bars-per-year it is given (default 260), so CAGR, Sharpe, Sortino and MAR of a grid
+// match a single run measured the same way.
+TEST(SweepPeriods, MetricsUseTheGivenBarsPerYear)
+{
+    const std::vector<ParameterAxis> axes = {{"hold", {2}}};
+    const StrategyFactory factory = [](const Params& p) -> std::unique_ptr<Strategy> {
+        return std::make_unique<OpenAndHold>(1.0, static_cast<int>(p[0]));
+    };
+    const BarSeries series = risingSeries();
+
+    const Metrics at365 = sweep(series, axes, factory, 1000.0, 365.0).metrics[0];
+    const Metrics atDefault = sweep(series, axes, factory, 1000.0).metrics[0];
+
+    OpenAndHold direct(1.0, 2);
+    const BacktestResult run = runBacktest(series, direct, 1000.0);
+    EXPECT_DOUBLE_EQ(at365.cagr, computeMetrics(run, 1000.0, 365.0).cagr);
+    EXPECT_DOUBLE_EQ(atDefault.cagr, computeMetrics(run, 1000.0, 260.0).cagr);
+    EXPECT_NE(at365.cagr, atDefault.cagr);
+}

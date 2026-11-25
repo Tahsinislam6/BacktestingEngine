@@ -8,6 +8,7 @@
 
 #include "api.hpp"
 #include "buy_and_hold.hpp"
+#include "test_strategies.hpp"
 
 namespace fs = std::filesystem;
 using nlohmann::json;
@@ -35,6 +36,8 @@ protected:
         fs::remove_all(root_);
         fs::create_directories(root_ / "data");
         registerBuiltins(registry_);
+        registerScaledHold(registry_);
+        writeSixBars(root_ / "data" / "six.txt");
         std::ofstream(root_ / "data" / "x.txt") <<
             "<TICKER>,<PER>,<DATE>,<TIME>,<OPEN>,<HIGH>,<LOW>,<CLOSE>,<VOL>,<OPENINT>\n"
             "X,D,20200101,000000,100,100,100,100,0,0\n"
@@ -89,16 +92,18 @@ TEST_F(ApiTest, StrategiesListsTheSchemas)
     ASSERT_EQ(r.status, 200);
     EXPECT_EQ(r.contentType, "application/json");
     const json doc = json::parse(r.body);
-    ASSERT_EQ(doc.size(), 1u);
+    ASSERT_EQ(doc.size(), 2u);                                   // buy_and_hold and the test strategy scaled_hold
     EXPECT_EQ(doc[0].at("name"), "buy_and_hold");
     EXPECT_EQ(doc[0].at("params")[0].at("name"), "fraction");
+    EXPECT_EQ(doc[1].at("name"), "scaled_hold");
+    EXPECT_EQ(doc[1].at("params").size(), 2u);
 }
 
 TEST_F(ApiTest, DatasetsListsTheFileNames)
 {
     const HttpResponse r = call("GET", "/api/datasets");
     ASSERT_EQ(r.status, 200);
-    EXPECT_EQ(json::parse(r.body), json::parse(R"(["x.txt"])"));
+    EXPECT_EQ(json::parse(r.body), json::parse(R"(["six.txt","x.txt"])"));
 }
 
 TEST_F(ApiTest, PostingARunGivesAnIdAndTheRunFinishes)
@@ -199,4 +204,83 @@ TEST_F(ApiTest, ADamagedRunFileIs500NotACrash)
 {
     std::ofstream(root_ / "runs" / "000005.json") << "{not json";
     EXPECT_EQ(call("GET", "/api/runs/000005").status, 500);
+}
+
+// ---- sweeps: POST /api/sweeps 202 {"id"}; the run record and the list then say kind "sweep" ----
+
+static const char* kSweepBody = R"({
+    "strategy": "scaled_hold", "dataset": "six.txt",
+    "axes": [{"param": "delay", "from": 0, "to": 2, "step": 1}, {"param": "size", "from": 1, "to": 2, "step": 1}],
+    "metric": "total-return", "threshold": 0.055, "radius": 1, "minTrades": 0, "nullRuns": 3, "block": 1,
+    "cash": 1000, "note": "my pass rule" })";
+
+TEST_F(ApiTest, PostingASweepGivesAnIdAndTheSweepFinishes)
+{
+    const HttpResponse r = call("POST", "/api/sweeps", kSweepBody);
+    ASSERT_EQ(r.status, 202) << r.body;
+    const std::string id = json::parse(r.body).at("id");
+
+    const json doc = waitFinished(id);
+
+    EXPECT_EQ(doc.at("status"), "done");
+    EXPECT_EQ(doc.at("kind"), "sweep");
+    EXPECT_EQ(doc.at("ideas").get<int>(), 24);
+    EXPECT_EQ(doc.at("spec").at("note"), "my pass rule");
+    EXPECT_EQ(doc.at("result").at("cells").get<int>(), 6);
+    EXPECT_EQ(doc.at("result").at("grid").at("values").size(), 6u);
+}
+
+TEST_F(ApiTest, ABadSweepIs400AndSaysWhy)
+{
+    json noNote = json::parse(kSweepBody);
+    noNote["note"] = "";
+    HttpResponse r = call("POST", "/api/sweeps", noNote.dump());
+    EXPECT_EQ(r.status, 400);
+    EXPECT_NE(json::parse(r.body).at("error").get<std::string>().find("note"), std::string::npos) << r.body;
+
+    json missingMetric = json::parse(kSweepBody);
+    missingMetric.erase("metric");
+    EXPECT_EQ(call("POST", "/api/sweeps", missingMetric.dump()).status, 400);
+
+    json outOfRange = json::parse(kSweepBody);
+    outOfRange["axes"][0]["to"] = 9;
+    EXPECT_EQ(call("POST", "/api/sweeps", outOfRange.dump()).status, 400);
+
+    EXPECT_EQ(call("POST", "/api/sweeps", "{not json").status, 400);
+    EXPECT_EQ(call("POST", "/api/sweeps", "").status, 400);
+    EXPECT_TRUE(store_->list().empty());
+}
+
+TEST_F(ApiTest, SweepsOnlyAcceptPost)
+{
+    EXPECT_EQ(call("GET", "/api/sweeps").status, 405);
+    EXPECT_EQ(call("DELETE", "/api/sweeps").status, 405);
+}
+
+TEST_F(ApiTest, TheListSummarisesASweepWithoutItsGrid)
+{
+    const std::string sweepId = json::parse(call("POST", "/api/sweeps", kSweepBody).body).at("id");
+    waitFinished(sweepId);
+    waitFinished(submitGoodRun());
+
+    const HttpResponse r = call("GET", "/api/runs");
+    ASSERT_EQ(r.status, 200);
+    const json list = json::parse(r.body);
+
+    ASSERT_EQ(list.size(), 2u);
+    const json& run = list[0];                               // newest first
+    const json& sweep = list[1];
+    EXPECT_EQ(run.at("kind"), "run");
+    EXPECT_EQ(run.at("ideas").get<int>(), 1);
+    EXPECT_TRUE(run.contains("metrics"));
+
+    EXPECT_EQ(sweep.at("kind"), "sweep");
+    EXPECT_EQ(sweep.at("ideas").get<int>(), 24);
+    EXPECT_EQ(sweep.at("spec").at("dataset"), "six.txt");
+    ASSERT_TRUE(sweep.contains("headline"));
+    EXPECT_EQ(sweep.at("headline").at("cells").get<int>(), 6);
+    EXPECT_DOUBLE_EQ(sweep.at("headline").at("plateauDensity").get<double>(), 0.0);
+    EXPECT_TRUE(sweep.at("headline").contains("shuffledPlateau95"));
+    EXPECT_FALSE(sweep.contains("result"));
+    EXPECT_EQ(sweep.dump().find("\"grid\""), std::string::npos);
 }

@@ -2,6 +2,7 @@
 
 #include <condition_variable>
 #include <deque>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -9,6 +10,7 @@
 
 #include "job.hpp"
 #include "run_store.hpp"
+#include "sweep_job.hpp"
 
 // Runs backtests in the background. submit() returns an id at once; one worker thread then runs the queued requests
 // one at a time, in order, saving every state change in the store, so a caller just polls the store for the result.
@@ -31,9 +33,21 @@ class RunManager
         // record and queues the run. Returns the run's id.
         std::string submit(const RunSpec& spec);
 
+        // The same for a density sweep (validateSweepSpec; throws std::invalid_argument, and nothing is recorded). The record
+        // has kind "sweep" and says how many ideas it tries, and its progress is saved while it runs.
+        std::string submitSweep(const SweepSpec& spec);
+
     private:
+        // One queued piece of work: it returns the result document and may report progress.
+        struct Job
+        {
+            std::string id;
+            std::function<nlohmann::json(const ProgressFn&)> work;
+        };
+
+        std::string enqueue(RunRecord record, std::function<nlohmann::json(const ProgressFn&)> work);
         void workerLoop();
-        void execute(const std::string& id, const RunSpec& spec);
+        void execute(const Job& job);
 
         RunStore& store_;
         const StrategyRegistry& registry_;
@@ -41,7 +55,7 @@ class RunManager
 
         std::mutex mutex_;
         std::condition_variable wake_;
-        std::deque<std::pair<std::string, RunSpec>> queue_;
+        std::deque<Job> queue_;
         bool stopping_{false};
         std::thread worker_;        // last, so everything above exists before it starts
 };

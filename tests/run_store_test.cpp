@@ -168,3 +168,46 @@ TEST_F(RunStoreTest, LoadOfADamagedRunThrows)
     std::ofstream(dir_ / "000001.json") << "{not json";
     EXPECT_THROW(store.load("000001"), std::runtime_error);
 }
+
+// A record also says what kind of job it is ("run" or "sweep"), how many ideas it tried (a run is one; a sweep is its cells
+// times one plus its shuffled copies) and, while a long job is running, how far it has got. Files written before these
+// fields existed read as a plain run of one idea.
+TEST_F(RunStoreTest, KindIdeasAndProgressSurviveASaveAndLoad)
+{
+    RunStore store(dir_.string());
+    RunRecord r = record("000001", RunStatus::Running);
+    r.kind = "sweep";
+    r.ideas = 48000;
+    r.progress = {{"done", 12}, {"total", 201}};
+    store.save(r);
+
+    const auto loaded = store.load("000001");
+
+    ASSERT_TRUE(loaded.has_value());
+    EXPECT_EQ(loaded->kind, "sweep");
+    EXPECT_EQ(loaded->ideas, 48000);
+    EXPECT_EQ(loaded->progress.at("done"), 12);
+    EXPECT_EQ(loaded->progress.at("total"), 201);
+}
+
+TEST_F(RunStoreTest, ANewRecordIsAPlainRunOfOneIdea)
+{
+    const RunRecord r;
+    EXPECT_EQ(r.kind, "run");
+    EXPECT_EQ(r.ideas, 1);
+    EXPECT_TRUE(r.progress.is_null());
+}
+
+TEST_F(RunStoreTest, FilesWrittenBeforeTheNewFieldsReadAsAPlainRun)
+{
+    RunStore store(dir_.string());
+    std::ofstream(dir_ / "000001.json") <<
+        R"({"id":"000001","status":"done","createdAt":"2026-11-25T10:00:00Z","spec":{"strategy":"a"}})";
+
+    const auto loaded = store.load("000001");
+
+    ASSERT_TRUE(loaded.has_value());
+    EXPECT_EQ(loaded->kind, "run");
+    EXPECT_EQ(loaded->ideas, 1);
+    EXPECT_TRUE(loaded->progress.is_null());
+}

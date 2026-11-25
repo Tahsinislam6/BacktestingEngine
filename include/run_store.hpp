@@ -25,6 +25,9 @@ struct RunRecord
     nlohmann::json spec;            // the request as run (with every parameter filled in)
     nlohmann::json result;          // the result document (null until the run is done)
     std::string error;              // why it failed (empty otherwise)
+    std::string kind{"run"};        // "run" (one backtest) or "sweep" (a density sweep)
+    int ideas{1};                   // ideas tried: 1 for a run; cells x (1 + shuffled copies) for a sweep. Counted when the job is queued
+    nlohmann::json progress;        // {"done": n, "total": m} while a long job runs (null otherwise)
 };
 
 // The log of every run: one JSON file per run (<id>.json) in one folder. Writing is atomic (a temp file, then a rename), so

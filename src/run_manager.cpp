@@ -5,6 +5,7 @@
 #include <exception>
 
 #include "job_json.hpp"
+#include "sweep_job_json.hpp"
 
 namespace
 {
@@ -45,6 +46,21 @@ RunManager::~RunManager()
     worker_.join();
 }
 
+std::string RunManager::enqueue(RunRecord record, std::function<nlohmann::json(const ProgressFn&)> work)
+{
+    record.id = store_.nextId();
+    record.status = RunStatus::Queued;
+    record.createdAt = nowUtc();
+    store_.save(record);
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        queue_.push_back({record.id, std::move(work)});
+    }
+    wake_.notify_one();
+    return record.id;
+}
+
 std::string RunManager::submit(const RunSpec& spec)
 {
     validateSpec(registry_, dataDir_, spec);
@@ -53,25 +69,36 @@ std::string RunManager::submit(const RunSpec& spec)
     resolved.params = registry_.resolveParams(spec.strategy, spec.params);
 
     RunRecord record;
-    record.id = store_.nextId();
-    record.status = RunStatus::Queued;
-    record.createdAt = nowUtc();
+    record.kind = "run";
+    record.ideas = 1;
     record.spec = toJson(resolved);
-    store_.save(record);
-
+    return enqueue(std::move(record), [this, resolved](const ProgressFn&)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        queue_.emplace_back(record.id, resolved);
-    }
-    wake_.notify_one();
-    return record.id;
+        return toJson(runJob(registry_, dataDir_, resolved));
+    });
+}
+
+std::string RunManager::submitSweep(const SweepSpec& spec)
+{
+    validateSweepSpec(registry_, dataDir_, spec);
+
+    const SweepSpec resolved = resolveSweepSpec(registry_, spec);
+
+    RunRecord record;
+    record.kind = "sweep";
+    record.ideas = static_cast<int>(sweepIdeas(registry_, resolved));
+    record.spec = toJson(resolved);
+    return enqueue(std::move(record), [this, resolved](const ProgressFn& progress)
+    {
+        return toJson(runSweep(registry_, dataDir_, resolved, progress));
+    });
 }
 
 void RunManager::workerLoop()
 {
     for (;;)
     {
-        std::pair<std::string, RunSpec> job;
+        Job job;
         {
             std::unique_lock<std::mutex> lock(mutex_);
             wake_.wait(lock, [this] { return stopping_ || !queue_.empty(); });
@@ -80,25 +107,39 @@ void RunManager::workerLoop()
             job = std::move(queue_.front());
             queue_.pop_front();
         }
-        execute(job.first, job.second);
+        execute(job);
     }
 }
 
-void RunManager::execute(const std::string& id, const RunSpec& spec)
+void RunManager::execute(const Job& job)
 {
     RunRecord record;
     try
     {
-        record = *store_.load(id);
+        record = *store_.load(job.id);
         record.status = RunStatus::Running;
         store_.save(record);
 
-        record.result = toJson(runJob(registry_, dataDir_, spec));
+        // Progress is saved at most every quarter of a second (and always at the end), so a long job does not spend its
+        // time writing files. The job never calls this from two threads at once.
+        auto lastSave = std::chrono::steady_clock::now();
+        const ProgressFn progress = [&](std::size_t done, std::size_t total)
+        {
+            record.progress = {{"done", done}, {"total", total}};
+            const auto now = std::chrono::steady_clock::now();
+            if (done >= total || now - lastSave >= std::chrono::milliseconds(250))
+            {
+                store_.save(record);
+                lastSave = now;
+            }
+        };
+
+        record.result = job.work(progress);
         record.status = RunStatus::Done;
     }
     catch (const std::exception& e)
     {
-        record.id = id;
+        record.id = job.id;
         record.status = RunStatus::Failed;
         record.error = e.what();
     }

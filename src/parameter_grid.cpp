@@ -13,7 +13,7 @@ std::vector<std::size_t> gridShape(const std::vector<ParameterAxis>& axes)
 }
 
 GridResult sweep(const BarSeries& series, const std::vector<ParameterAxis>& axes, const StrategyFactory& factory,
-                 double startingCash)
+                 double startingCash, double periodsPerYear)
 {
     if (!factory)
         throw std::invalid_argument("sweep needs a strategy factory");
@@ -37,7 +37,7 @@ GridResult sweep(const BarSeries& series, const std::vector<ParameterAxis>& axes
             throw std::invalid_argument("the strategy factory returned no strategy");
 
         const BacktestResult run = runBacktest(series, *strategy, startingCash);
-        result.metrics.push_back(computeMetrics(run, startingCash));
+        result.metrics.push_back(computeMetrics(run, startingCash, periodsPerYear));
     }
     return result;
 }
