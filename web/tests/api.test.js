@@ -1,0 +1,45 @@
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { getStrategies, getDatasets, postRun, getRun, getRuns } from '../src/lib/api.js';
+
+function reply(status, body) {
+  return { ok: status >= 200 && status < 300, status, json: async () => body };
+}
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe('api', () => {
+  it('GETs the right paths and returns the parsed JSON', async () => {
+    const fetchMock = vi.fn(async () => reply(200, ['x']));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await getStrategies()).toEqual(['x']);
+    expect(await getDatasets()).toEqual(['x']);
+    expect(await getRuns()).toEqual(['x']);
+    expect(await getRun('000001')).toEqual(['x']);
+    expect(fetchMock.mock.calls.map((c) => c[0])).toEqual([
+      '/api/strategies', '/api/datasets', '/api/runs', '/api/runs/000001',
+    ]);
+  });
+  it('POSTs a run as JSON and returns its id', async () => {
+    const fetchMock = vi.fn(async () => reply(202, { id: '000007' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const id = await postRun({ strategy: 'a', dataset: 'b' });
+    expect(id).toBe('000007');
+    const [path, init] = fetchMock.mock.calls[0];
+    expect(path).toBe('/api/runs');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ strategy: 'a', dataset: 'b' });
+    expect(init.headers['Content-Type']).toBe('application/json');
+  });
+  it("throws the server's own error text", async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => reply(400, { error: 'unknown strategy: nope' })));
+    await expect(postRun({})).rejects.toThrow('unknown strategy: nope');
+  });
+  it('throws a readable error when the server cannot be reached', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
+    await expect(getStrategies()).rejects.toThrow(/server/i);
+  });
+  it('throws with the status when the reply is not JSON', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 502, json: async () => { throw new Error('bad'); } })));
+    await expect(getRuns()).rejects.toThrow('502');
+  });
+});

@@ -36,6 +36,19 @@ only; the default port is 8080). With `--web` it also serves the built web app a
 A run found `queued` or `running` when the server starts was cut off by a stop and is marked `failed`. A private project
 calls `runServer(registry, options)` from its own `main()` after adding its strategies to the registry.
 
+## The web app
+`web/` is a Svelte + Vite app (charts by ECharts) that talks to the server's API: pick a dataset and a strategy, fill in
+the parameters (the form is built from `/api/strategies`, with each parameter's limits checked as you type), run, and see
+the metrics, the equity curve with its drawdown, the trades and the history of every run. Node is only needed to build it.
+
+    cd web && npm install            # once
+    npm test                         # the formatting, parameter and API-call logic
+    npm run build                    # writes web/dist
+    cd .. && ./build/server ../data runs --web web/dist       # then open http://127.0.0.1:8080
+
+While working on the app, run the server (without `--web`) and `npm run dev` in `web/`: the page is at
+http://localhost:5173 and `/api` is forwarded to the server on port 8080.
+
 ## Using it from another project
 The CMake target `engine` is the library; its headers are in `include/`. From another project's CMakeLists.txt:
 

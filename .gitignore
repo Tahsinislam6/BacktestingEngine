@@ -97,6 +97,7 @@ core.*
 vcpkg_installed/
 conan/
 node_modules/
+web/dist/
 
 # ---- Environment / secrets ----
 .env

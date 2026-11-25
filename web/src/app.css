@@ -1,0 +1,75 @@
+:root {
+  --bg: #0e1116;
+  --panel: #151a22;
+  --panel-2: #1b212b;
+  --border: #262d39;
+  --text: #e6e9ef;
+  --muted: #8b95a5;
+  --accent: #6ea8fe;
+  --accent-strong: #4f8fef;
+  --good: #4cc38a;
+  --bad: #ef6b63;
+  --warn: #e5b45a;
+  --radius: 10px;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; background: var(--bg); color: var(--text); }
+body {
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+
+input, select {
+  width: 100%;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 8px 10px;
+  font: inherit;
+  outline: none;
+}
+input:focus, select:focus { border-color: var(--accent); }
+input[aria-invalid='true'] { border-color: var(--bad); }
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  padding: 8px 14px;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+button.primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; font-weight: 600; }
+button.primary:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); }
+
+.muted { color: var(--muted); }
+.mono { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
+.pos { color: var(--good); }
+.neg { color: var(--bad); }
+
+.error-box {
+  background: rgba(239, 107, 99, 0.1);
+  border: 1px solid rgba(239, 107, 99, 0.4);
+  color: #ffb4ae;
+  border-radius: 8px;
+  padding: 10px 12px;
+}

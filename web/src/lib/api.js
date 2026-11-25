@@ -1,0 +1,33 @@
+// The calls to the C++ server. Every function returns the parsed JSON or throws an Error whose message can be shown as is.
+
+async function request(path, init) {
+  let response;
+  try {
+    response = await fetch(path, init);
+  } catch {
+    throw new Error('Cannot reach the server. Is it running?');
+  }
+  let body;
+  try {
+    body = await response.json();
+  } catch {
+    throw new Error(`Server error (${response.status})`);
+  }
+  if (!response.ok) throw new Error(body?.error ?? `Server error (${response.status})`);
+  return body;
+}
+
+export const getStrategies = () => request('/api/strategies');
+export const getDatasets = () => request('/api/datasets');
+export const getRuns = () => request('/api/runs');
+export const getRun = (id) => request(`/api/runs/${id}`);
+
+// Queues a run and returns its id.
+export async function postRun(spec) {
+  const body = await request('/api/runs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(spec),
+  });
+  return body.id;
+}
