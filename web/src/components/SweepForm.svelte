@@ -15,7 +15,7 @@
     { param: '', from: '', to: '', step: '' },
   ]);
 
-  // The test settings start at the values of the research program density_sweep. Nothing is hidden: change them before
+  // The test settings have starting values. Nothing is hidden: change them before
   // running; they are not picked for you.
   let metric = $state('mar');
   let threshold = $state('0');
@@ -161,7 +161,7 @@
 
   <div class="group">
     <span class="group-title">What counts as good</span>
-    <p class="hint first">Starts at the settings of density_sweep. Change them now; they are not picked for you.</p>
+    <p class="hint first">These are starting values. Change them now; they are not picked for you.</p>
     <div class="field">
       <label for="s-metric">Metric</label>
       <select id="s-metric" bind:value={metric}>{#each METRICS as m}<option value={m.value}>{m.label}</option>{/each}</select>

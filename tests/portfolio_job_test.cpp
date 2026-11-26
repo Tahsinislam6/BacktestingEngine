@@ -19,7 +19,7 @@ namespace fs = std::filesystem;
 using nlohmann::json;
 
 // A portfolio job: several sleeves side by side, each one asset (a dataset) with its own strategy, settings and bucket of
-// cash; nothing moves between sleeves. It is the job version of the research program `portfolio_run`.
+// cash; nothing moves between sleeves.
 //
 //   1. A sleeve is named; its name is also its asset's symbol, so two sleeves can use the same dataset under different names.
 //   2. Each sleeve is judged against its own cash; the portfolio against the sum of the cash, on the sum of the curves.

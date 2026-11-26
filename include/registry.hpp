@@ -35,7 +35,7 @@ using NamedParams = std::map<std::string, double>;
 using StrategyBuilder = std::function<std::unique_ptr<Strategy>(const NamedParams&)>;
 
 // The table of strategies a job can name. The engine ships one (buy_and_hold, see buy_and_hold.hpp); a private project
-// adds its own strategies to a registry in its own main() and hands the registry to the runner or the server.
+// adds its own strategies to a registry in its own main() and hands the registry to the server.
 class StrategyRegistry
 {
     public:

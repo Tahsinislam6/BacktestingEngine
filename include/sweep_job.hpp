@@ -10,8 +10,7 @@
 #include "registry.hpp"
 
 // A density sweep job: run a strategy over a grid of two parameters on real data and on shuffled copies of it, and report
-// how much of the grid gives good results (see density.hpp and null_series.hpp). It is the job version of the research
-// program `density_sweep`, with the same rules:
+// how much of the grid gives good results (see density.hpp and null_series.hpp). The rules:
 //
 //  - Nothing is picked for the user. The metric, threshold, radius, minimum trades, number of shuffled copies and block
 //    length are all part of the request, and a note (what is expected, what counts as a pass) is required.

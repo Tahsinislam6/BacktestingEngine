@@ -9,14 +9,14 @@
 #include "sleeve.hpp"
 
 // A portfolio job: several sleeves side by side, each one asset (a dataset) with its own strategy, settings and bucket of
-// cash. Nothing moves between sleeves. It is the job version of the research program `portfolio_run`.
+// cash. Nothing moves between sleeves.
 //
 //  - A sleeve's name is also its asset's symbol, so two sleeves may use the same dataset under different names (two
 //    strategies on one asset, say). Names are unique.
 //  - Each sleeve is judged against its own cash; the portfolio against the sum of the cash, on the sum of the curves.
 //  - commonPeriodOnly starts everything on the first day every asset has data; otherwise an asset whose data starts years
 //    later sits in cash until then and dilutes the portfolio.
-//  - There are no spreads or swap here (as in portfolio_run).
+//  - There are no spreads or swap here.
 
 struct PortfolioSleeve
 {

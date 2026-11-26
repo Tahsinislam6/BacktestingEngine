@@ -25,8 +25,7 @@ namespace fs = std::filesystem;
 using nlohmann::json;
 
 // A density sweep job: run a strategy over a grid of two parameters on real data and on shuffled copies of it, and report
-// how much of the grid gives good results (see density.hpp). It is the web version of the research program
-// `density_sweep`, with the same rules:
+// how much of the grid gives good results (see density.hpp). The rules:
 //
 //   1. Nothing is picked for the user: the metric, threshold, radius, minimum trades, number of shuffled copies and block
 //      length must all be given. A note that says what is expected and what counts as a pass is required.
